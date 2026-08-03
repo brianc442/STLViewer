@@ -443,11 +443,11 @@ git commit -m "Add global Show color toggle"
 **Files:**
 - Create: `test-fixtures/colored-quad.ply`
 - Create: `test-fixtures/flat-quad.ply`
-- Modify: `stl_viewer.html` — add `loadPLYData()`, extend `handleFile()`'s dispatch, extend dropzone copy and `#fileInput accept`.
+- Modify: `stl_viewer.html` — add `buildVertexColorMaterial()`, `loadPLYData()`, extend `handleFile()`'s dispatch, extend dropzone copy and `#fileInput accept`.
 
 **Interfaces:**
 - Consumes: `buildMeshModel` (Task 2).
-- Produces: `loadPLYData(buffer: ArrayBuffer, fileName: string): void`.
+- Produces: `loadPLYData(buffer: ArrayBuffer, fileName: string): void`, `buildVertexColorMaterial(): THREE.MeshPhongMaterial` (reused by Task 6's OBJ vertex-color path and Task 8's multi-material bake).
 
 - [ ] **Step 1: Create the colored PLY fixture**
 
@@ -496,11 +496,45 @@ end_header
 3 0 2 3
 ```
 
-- [ ] **Step 3: Add `loadPLYData()`**
+- [ ] **Step 3: Add `buildVertexColorMaterial()` and `loadPLYData()`**
 
-Add this function directly below `loadSTLData` in `stl_viewer.html`:
+> **Plan correction (found during Task 4 implementation):** the original draft of
+> `loadPLYData` below called `buildMeshModel(..., hasColor, size)` with `colored: true`
+> but no 7th argument (`materialColorOverride`). Looking at `buildMeshModel` (Task 2):
+> `const materialColor = colored ? (materialColorOverride || null) : null;` — without
+> an override, `materialColor` stays `null` even when `colored` is `true`, so the mesh
+> silently falls back to the flat material and vertex colors never render. This is a
+> real gap in the plan, not a misreading of it. The fix: add a `buildVertexColorMaterial()`
+> helper (parallel to `buildFlatMaterial()`/`buildWireMaterial()` from Task 2) and pass
+> it as the override whenever `hasColor` is true. This same gap exists in Task 6's OBJ
+> vertex-color-extension path and Task 8's OBJ multi-material bake — both are already
+> corrected below.
+>
+> Note on the Three.js r128 API: `MeshPhongMaterial.vertexColors` is a plain boolean in
+> r128 (`this.vertexColors = false;` by default, checked as `if (this.vertexColors)`),
+> not the older `THREE.VertexColors` enum from pre-r125 Three.js. Use `vertexColors: true`
+> — do not use `THREE.VertexColors`, which would be a legacy leftover constant, not what
+> the boolean field actually checks for correctness (it happens to be truthy so it
+> wouldn't break anything today, but it's the wrong API for this version and shouldn't
+> be introduced).
+
+Add these two functions directly below `loadSTLData` in `stl_viewer.html`:
 
 ```js
+function buildVertexColorMaterial(){
+  return new THREE.MeshPhongMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    specular: 0x111111,
+    shininess: 18,
+    flatShading: true,
+    side: THREE.DoubleSide,
+    transparent: false,
+    opacity: 1,
+    clippingPlanes: []
+  });
+}
+
 function loadPLYData(buffer, fileName){
   let geometry;
   try {
@@ -545,7 +579,7 @@ function loadPLYData(buffer, fileName){
   nonIndexed.computeVertexNormals();
   nonIndexed.computeBoundingBox();
 
-  buildMeshModel(nonIndexed, fileName, 'PLY', hasColor ? 'vertexColor' : 'flat', hasColor, size);
+  buildMeshModel(nonIndexed, fileName, 'PLY', hasColor ? 'vertexColor' : 'flat', hasColor, size, hasColor ? buildVertexColorMaterial() : undefined);
 }
 ```
 
@@ -715,7 +749,7 @@ git commit -m "Add PLY point-cloud rendering"
 - Modify: `stl_viewer.html` — add `loadOBJData()`, `finalizeSingleMaterialOBJ()`, `loadOBJPointCloudFallback()`; restructure `handleFiles`/`handleFile` into the batch+companions form; extend dropzone copy and `#fileInput accept`.
 
 **Interfaces:**
-- Consumes: `buildMeshModel`, `buildPointCloudModel` (Tasks 2, 5).
+- Consumes: `buildMeshModel`, `buildPointCloudModel` (Tasks 2, 5), `buildVertexColorMaterial` (Task 4 — required as the `materialColorOverride` for the `hasVertexColor` branch in `finalizeSingleMaterialOBJ`, same fix as Task 4's PLY vertex-color path; see the plan-correction note in Task 4).
 - Produces:
   - `handleFiles(fileList): void` — now batches a drop/selection, separating `.obj/.ply/.stl` from companion files (`.mtl`, images).
   - `handleFile(file, companions: Map<string,File>): void`
@@ -761,6 +795,14 @@ v 0 0 1 1 1 0
 ```
 
 - [ ] **Step 4: Add `loadOBJData()`, `finalizeSingleMaterialOBJ()`, and `loadOBJPointCloudFallback()`**
+
+> **Plan correction (carried over from Task 4):** `finalizeSingleMaterialOBJ`'s
+> `hasVertexColor` branch below passes `buildVertexColorMaterial()` (from Task 4) as
+> the `materialColorOverride` — without it, `colored: true` with no override means
+> `buildMeshModel` (Task 2) leaves `materialColor` `null` and the mesh silently renders
+> flat instead of showing the OBJ's `v x y z r g b` vertex colors. If Task 4 has not
+> defined `buildVertexColorMaterial()` yet for some reason, add it now exactly as
+> specified in Task 4's Step 3 before using it here.
 
 Add these three functions directly below `loadPLYData`:
 
@@ -857,6 +899,7 @@ function finalizeSingleMaterialOBJ(child, fileName){
     });
   } else if(hasVertexColor){
     colorMode = 'vertexColor'; colored = true;
+    materialColorOverride = buildVertexColorMaterial();
   } else if(hasFlatKd){
     colorMode = 'material'; colored = true;
     materialColorOverride = new THREE.MeshPhongMaterial({
@@ -1185,7 +1228,7 @@ git commit -m "Add OBJ+MTL+texture batch loading with missing-companion fallback
 - Modify: `stl_viewer.html` — add `finalizeMultiMaterialOBJ()` (referenced but undefined since Task 6).
 
 **Interfaces:**
-- Consumes: `THREE.BufferGeometryUtils.mergeBufferGeometries` (Task 1), `buildMeshModel` (Task 2), `finishOBJLoad`'s existing call site (Task 6).
+- Consumes: `THREE.BufferGeometryUtils.mergeBufferGeometries` (Task 1), `buildMeshModel` (Task 2), `buildVertexColorMaterial` (Task 4 — same fix as Tasks 4 and 6; the merged geometry always gets a baked `color` attribute below, so it always needs the vertex-color material as its override, not `null`), `finishOBJLoad`'s existing call site (Task 6).
 - Produces: `finalizeMultiMaterialOBJ(meshChildren: THREE.Mesh[], fileName: string): void`.
 
 - [ ] **Step 1: Create the two-material OBJ+MTL fixture**
@@ -1219,6 +1262,12 @@ f 2 6 3
 ```
 
 - [ ] **Step 2: Add `finalizeMultiMaterialOBJ()`**
+
+> **Plan correction (same class of bug as Tasks 4 and 6):** the merged geometry below
+> always ends up with a baked `color` attribute (every submesh either already had one
+> or gets one synthesized from its material's Kd), so this path must always pass
+> `buildVertexColorMaterial()` (Task 4) as `buildMeshModel`'s override — `colored: true`
+> with no override would again silently fall back to the flat material.
 
 Add this function directly below `finalizeSingleMaterialOBJ`:
 
@@ -1256,7 +1305,7 @@ function finalizeMultiMaterialOBJ(meshChildren, fileName){
   merged.computeVertexNormals();
   merged.computeBoundingBox();
 
-  buildMeshModel(merged, fileName, 'OBJ', 'material', true, size);
+  buildMeshModel(merged, fileName, 'OBJ', 'material', true, size, buildVertexColorMaterial());
 }
 ```
 
