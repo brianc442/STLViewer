@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>STL Viewer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 <style>
   :root{
     --bg: #0d1210;
@@ -178,6 +182,7 @@
     color: var(--ink-dim);
     margin-top: 3px;
   }
+  .model-color-tag{ color: var(--accent); }
   .model-opacity-row{
     display:flex; align-items:center; gap: 8px;
     margin-top: 7px;
@@ -565,9 +570,9 @@
           <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
           <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
         </svg>
-        <div>Drop .stl files here<br>or click to browse — add as many as you like</div>
+        <div>Drop .stl, .obj, or .ply files here — for textured OBJs, drop the .mtl and image together<br>or click to browse — add as many as you like</div>
       </div>
-      <input type="file" id="fileInput" accept=".stl" multiple>
+      <input type="file" id="fileInput" accept=".stl,.obj,.ply,.mtl,.jpg,.jpeg,.png" multiple>
     </div>
 
     <div class="section" id="modelsSection" style="display:none;">
@@ -592,6 +597,10 @@
       <div class="toggle-row">
         <label for="tTheme">Light mode</label>
         <div class="switch" id="tTheme"></div>
+      </div>
+      <div class="toggle-row">
+        <label for="tColor">Show color</label>
+        <div class="switch on" id="tColor"></div>
       </div>
       <div class="model-opacity-row" style="margin-top:10px;">
         <span class="model-opacity-label">Brightness</span>
@@ -738,8 +747,8 @@
     rebuildGridForTheme();
     const modelColor = THEME_3D[currentTheme].modelColor;
     models.forEach((m) => {
-      m.mesh.material.color.setHex(modelColor);
-      m.mesh.material.needsUpdate = true;
+      m.materialFlat.color.setHex(modelColor);
+      m.materialFlat.needsUpdate = true;
     });
   }
 
@@ -868,7 +877,7 @@
     if(baseArmed){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
-      const meshList = models.map(m => m.mesh);
+      const meshList = models.filter(m => !m.isPointCloud).map(m => m.mesh);
       const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
       if(hit && hit.face){
         const owner = models.find(m => m.mesh === hit.object);
@@ -1092,6 +1101,105 @@
   }
 
   // ---------- Build a model from parsed STL, added to the collection ----------
+  function buildFlatMaterial(){
+    return new THREE.MeshPhongMaterial({
+      color: THEME_3D[currentTheme].modelColor,
+      specular: 0x111111,
+      shininess: 18,
+      flatShading: true,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1,
+      clippingPlanes: []
+    });
+  }
+
+  function buildWireMaterial(){
+    return new THREE.MeshBasicMaterial({
+      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
+    });
+  }
+
+  function colorModeLabel(m){
+    switch(m.colorMode){
+      case 'texture': return 'Textured';
+      case 'vertexColor': return 'Vertex color';
+      case 'material': return 'Material color';
+      default: return 'Flat';
+    }
+  }
+
+  function finalizeNewModel(model){
+    models.push(model);
+    relayoutModels();
+    recomputeCombinedBounds();
+    frameCameraOnModels();
+    renderModelList();
+
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('btnDrawSection').disabled = false;
+    document.getElementById('btnPickBase').disabled = false;
+
+    if(cutPlane) refreshSection();
+    return model;
+  }
+
+  function buildMeshModel(geometry, fileName, format, colorMode, colored, size, materialColorOverride){
+    const materialFlat = buildFlatMaterial();
+    const materialColor = colored ? (materialColorOverride || null) : null;
+
+    const meshObj = new THREE.Mesh(geometry, (colored && materialColor && showColor) ? materialColor : materialFlat);
+
+    const wireGeo = geometry.clone();
+    const wireMeshObj = new THREE.Mesh(wireGeo, buildWireMaterial());
+    wireMeshObj.visible = wireOn;
+
+    const group = new THREE.Group();
+    group.add(meshObj);
+    group.add(wireMeshObj);
+    scene.add(group);
+
+    const model = {
+      id: ++modelIdCounter,
+      name: fileName,
+      group, mesh: meshObj, wireMesh: wireMeshObj,
+      isPointCloud: false,
+      format, colorMode, colored,
+      materialFlat, materialColor,
+      triCount: geometry.attributes.position.count / 3,
+      vertCount: geometry.attributes.position.count,
+      size, opacity: 100
+    };
+    return finalizeNewModel(model);
+  }
+
+  function buildPointCloudModel(geometry, fileName, format, colored, size){
+    const pointSize = Math.max(size.length() * 0.01, 0.005);
+    const materialFlat = new THREE.PointsMaterial({
+      color: THEME_3D[currentTheme].modelColor, size: pointSize
+    });
+    const materialColor = colored ? new THREE.PointsMaterial({ vertexColors: true, size: pointSize }) : null;
+
+    const pointsObj = new THREE.Points(geometry, (colored && materialColor && showColor) ? materialColor : materialFlat);
+
+    const group = new THREE.Group();
+    group.add(pointsObj);
+    scene.add(group);
+
+    const model = {
+      id: ++modelIdCounter,
+      name: fileName,
+      group, mesh: pointsObj, wireMesh: null,
+      isPointCloud: true,
+      format, colorMode: colored ? 'vertexColor' : 'flat', colored,
+      materialFlat, materialColor,
+      triCount: 0,
+      vertCount: geometry.attributes.position.count,
+      size, opacity: 100
+    };
+    return finalizeNewModel(model);
+  }
+
   function loadSTLData(buffer, fileName){
     let parsed;
     try {
@@ -1110,9 +1218,6 @@
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
 
-    // Center this model's own geometry on its own local origin — every
-    // model keeps its own independent local space, and is positioned in
-    // the scene purely via its group's transform (see relayoutModels).
     const bbox = geometry.boundingBox;
     const size = new THREE.Vector3();
     bbox.getSize(size);
@@ -1121,8 +1226,13 @@
     geometry.translate(-center.x, -center.y, -center.z);
     geometry.computeBoundingBox();
 
-    const material = new THREE.MeshPhongMaterial({
-      color: THEME_3D[currentTheme].modelColor,
+    buildMeshModel(geometry, fileName, parsed.format, 'flat', false, size);
+  }
+
+  function buildVertexColorMaterial(){
+    return new THREE.MeshPhongMaterial({
+      color: 0xffffff,
+      vertexColors: true,
       specular: 0x111111,
       shininess: 18,
       flatShading: true,
@@ -1131,42 +1241,274 @@
       opacity: 1,
       clippingPlanes: []
     });
-    const meshObj = new THREE.Mesh(geometry, material);
+  }
 
-    const wireGeo = geometry.clone();
-    const wireMat = new THREE.MeshBasicMaterial({
-      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
-    });
-    const wireMeshObj = new THREE.Mesh(wireGeo, wireMat);
-    wireMeshObj.visible = wireOn;
+  function loadPLYData(buffer, fileName){
+    let geometry;
+    try {
+      geometry = new THREE.PLYLoader().parse(buffer);
+    } catch(err){
+      alert('Could not parse "' + fileName + '" as PLY: ' + err.message);
+      return;
+    }
+    if(!geometry.attributes.position || geometry.attributes.position.count < 1){
+      alert('No vertex data found in "' + fileName + '" — is this a valid PLY file?');
+      return;
+    }
 
-    const group = new THREE.Group();
-    group.add(meshObj);
-    group.add(wireMeshObj);
-    scene.add(group);
+    const hasColor = !!geometry.attributes.color;
+    const isPointCloud = !geometry.index;
 
-    const model = {
-      id: ++modelIdCounter,
-      name: fileName,
-      group, mesh: meshObj, wireMesh: wireMeshObj,
-      format: parsed.format,
-      triCount: parsed.positions.length / 9,
-      vertCount: parsed.positions.length / 3,
-      size,
-      opacity: 100
+    if(isPointCloud){
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox;
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      geometry.translate(-center.x, -center.y, -center.z);
+      geometry.computeBoundingBox();
+      buildPointCloudModel(geometry, fileName, 'PLY', hasColor, size);
+      return;
+    }
+
+    const nonIndexed = geometry.toNonIndexed();
+    if(!nonIndexed.attributes.position || nonIndexed.attributes.position.count < 3){
+      alert('No triangle data found in "' + fileName + '" — is this a valid PLY file?');
+      return;
+    }
+    nonIndexed.computeBoundingBox();
+    const bbox = nonIndexed.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    nonIndexed.translate(-center.x, -center.y, -center.z);
+    nonIndexed.computeVertexNormals();
+    nonIndexed.computeBoundingBox();
+
+    buildMeshModel(nonIndexed, fileName, 'PLY', hasColor ? 'vertexColor' : 'flat', hasColor, size, hasColor ? buildVertexColorMaterial() : undefined);
+  }
+
+  function loadOBJData(objText, fileName, companions){
+    const mtlMatch = objText.match(/^mtllib\s+(.+)$/m);
+    const mtlName = mtlMatch ? mtlMatch[1].trim().toLowerCase() : null;
+    const mtlFile = mtlName ? companions.get(mtlName) : null;
+
+    if(!mtlFile){
+      if(mtlName){
+        console.warn(`"${fileName}" references mtllib "${mtlName}" but no matching file was included in this batch — loading without material color.`);
+      }
+      finishOBJLoad(objText, fileName, null, companions);
+      return;
+    }
+
+    const mtlReader = new FileReader();
+    mtlReader.onerror = () => {
+      console.warn(`Could not read "${mtlFile.name}" — loading "${fileName}" without material color.`);
+      finishOBJLoad(objText, fileName, null, companions);
     };
-    models.push(model);
+    mtlReader.onload = (e) => finishOBJLoad(objText, fileName, e.target.result, companions);
+    mtlReader.readAsText(mtlFile);
+  }
 
-    relayoutModels();
-    recomputeCombinedBounds();
-    frameCameraOnModels();
-    renderModelList();
+  function finishOBJLoad(objText, fileName, mtlText, companions){
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url) => {
+      const base = url.split('/').pop().toLowerCase();
+      const file = companions.get(base);
+      if(!file){
+        console.warn(`Texture "${url}" referenced by "${fileName}" was not found in this batch — using material color only.`);
+        return url;
+      }
+      return URL.createObjectURL(file);
+    });
 
-    document.getElementById('emptyState').style.display = 'none';
-    document.getElementById('btnDrawSection').disabled = false;
-    document.getElementById('btnPickBase').disabled = false;
+    let materials = null;
+    if(mtlText){
+      try {
+        const mtlLoader = new THREE.MTLLoader(manager);
+        materials = mtlLoader.parse(mtlText, '');
+        materials.preload();
+      } catch(err){
+        console.warn(`Could not parse material file for "${fileName}": ${err.message}`);
+        materials = null;
+      }
+    }
 
-    if(cutPlane) refreshSection(); // fold the newly added model into the live section
+    const objLoader = new THREE.OBJLoader(manager);
+    if(materials) objLoader.setMaterials(materials);
+
+    let group;
+    try {
+      group = objLoader.parse(objText);
+    } catch(err){
+      alert('Could not parse "' + fileName + '" as OBJ: ' + err.message);
+      return;
+    }
+
+    const meshChildren = [];
+    group.traverse((child) => { if(child.isMesh) meshChildren.push(child); });
+
+    if(meshChildren.length === 0){
+      loadOBJPointCloudFallback(objText, fileName);
+      return;
+    }
+
+    const isMultiMaterial = meshChildren.length > 1 ||
+      meshChildren.some((child) => Array.isArray(child.material) && child.material.length > 1);
+
+    if(!isMultiMaterial){
+      finalizeSingleMaterialOBJ(meshChildren[0], fileName);
+    } else {
+      finalizeMultiMaterialOBJ(meshChildren, fileName);
+    }
+  }
+
+  function finalizeSingleMaterialOBJ(child, fileName){
+    let geometry = child.geometry;
+    if(!geometry.attributes.position || geometry.attributes.position.count < 3){
+      alert('No triangle data found in "' + fileName + '" — is this a valid OBJ file?');
+      return;
+    }
+    if(geometry.index) geometry = geometry.toNonIndexed();
+
+    const hasVertexColor = !!geometry.attributes.color;
+    const srcMat = Array.isArray(child.material) ? child.material[0] : child.material;
+    const hasTexture = !!(srcMat && srcMat.map);
+    const hasFlatKd = !!(srcMat && srcMat.color && srcMat.color.getHex() !== 0xffffff);
+
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+
+    let colorMode = 'flat';
+    let colored = false;
+    let materialColorOverride = null;
+
+    if(hasTexture){
+      colorMode = 'texture'; colored = true;
+      materialColorOverride = new THREE.MeshPhongMaterial({
+        color: srcMat.color ? srcMat.color.clone() : new THREE.Color(0xffffff),
+        map: srcMat.map,
+        specular: 0x111111, shininess: 18, flatShading: true,
+        side: THREE.DoubleSide, transparent: false, opacity: 1, clippingPlanes: []
+      });
+    } else if(hasVertexColor){
+      colorMode = 'vertexColor'; colored = true;
+      materialColorOverride = buildVertexColorMaterial();
+    } else if(hasFlatKd){
+      colorMode = 'material'; colored = true;
+      materialColorOverride = new THREE.MeshPhongMaterial({
+        color: srcMat.color.clone(),
+        specular: 0x111111, shininess: 18, flatShading: true,
+        side: THREE.DoubleSide, transparent: false, opacity: 1, clippingPlanes: []
+      });
+    }
+
+    buildMeshModel(geometry, fileName, 'OBJ', colorMode, colored, size, materialColorOverride);
+  }
+
+  function finalizeMultiMaterialOBJ(meshChildren, fileName){
+    const geometries = meshChildren.map((child) => {
+      let geo = child.geometry;
+      const materialsArr = Array.isArray(child.material) ? child.material : [child.material];
+
+      if(!geo.attributes.color){
+        const count = geo.attributes.position.count;
+        const colors = new Float32Array(count * 3);
+        const fallback = (materialsArr[0] && materialsArr[0].color) ? materialsArr[0].color : new THREE.Color(0xffffff);
+        for(let i = 0; i < count; i++){
+          colors[i * 3] = fallback.r; colors[i * 3 + 1] = fallback.g; colors[i * 3 + 2] = fallback.b;
+        }
+
+        const groups = (geo.groups && geo.groups.length)
+          ? geo.groups
+          : [{ start: 0, count: geo.index ? geo.index.count : count, materialIndex: 0 }];
+
+        groups.forEach((group) => {
+          const mat = materialsArr[group.materialIndex] || materialsArr[0];
+          const c = (mat && mat.color) ? mat.color : fallback;
+          if(geo.index){
+            for(let i = group.start; i < group.start + group.count; i++){
+              const vIdx = geo.index.array[i];
+              colors[vIdx * 3] = c.r; colors[vIdx * 3 + 1] = c.g; colors[vIdx * 3 + 2] = c.b;
+            }
+          } else {
+            for(let i = group.start; i < group.start + group.count; i++){
+              colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+            }
+          }
+        });
+
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      }
+
+      if(geo.index) geo = geo.toNonIndexed();
+      geo.deleteAttribute('normal');
+      geo.deleteAttribute('uv');
+      return geo;
+    });
+
+    const merged = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries, false);
+    if(!merged || !merged.attributes.position || merged.attributes.position.count < 3){
+      alert('No triangle data found in "' + fileName + '" — is this a valid OBJ file?');
+      return;
+    }
+
+    merged.computeBoundingBox();
+    const bbox = merged.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    merged.translate(-center.x, -center.y, -center.z);
+    merged.computeVertexNormals();
+    merged.computeBoundingBox();
+
+    buildMeshModel(merged, fileName, 'OBJ', 'material', true, size, buildVertexColorMaterial());
+  }
+
+  function loadOBJPointCloudFallback(objText, fileName){
+    const positions = [];
+    const colors = [];
+    let hasColor = false;
+    const vertexRe = /^v\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)(?:\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+))?/gm;
+    let m;
+    while((m = vertexRe.exec(objText)) !== null){
+      positions.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+      if(m[4] !== undefined){
+        hasColor = true;
+        colors.push(parseFloat(m[4]), parseFloat(m[5]), parseFloat(m[6]));
+      } else {
+        colors.push(1, 1, 1);
+      }
+    }
+    if(positions.length < 3){
+      alert('No vertex data found in "' + fileName + '" — is this a valid OBJ file?');
+      return;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    if(hasColor) geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    geometry.computeBoundingBox();
+
+    buildPointCloudModel(geometry, fileName, 'OBJ', hasColor, size);
   }
 
   // Lays every loaded model out side by side along X, each resting with
@@ -1220,8 +1562,10 @@
     if(idx === -1) return;
     const m = models[idx];
     scene.remove(m.group);
-    m.mesh.geometry.dispose(); m.mesh.material.dispose();
-    m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
+    m.mesh.geometry.dispose();
+    m.materialFlat.dispose();
+    if(m.materialColor) m.materialColor.dispose();
+    if(m.wireMesh){ m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose(); }
     models.splice(idx, 1);
 
     relayoutModels();
@@ -1243,11 +1587,16 @@
     if(!m) return;
     m.opacity = pct;
     const a = pct / 100;
-    m.mesh.material.transparent = a < 1;
-    m.mesh.material.opacity = a;
-    m.mesh.material.needsUpdate = true;
-    m.wireMesh.material.opacity = 0.35 * a;
-    m.wireMesh.material.needsUpdate = true;
+    [m.materialFlat, m.materialColor].forEach((mat) => {
+      if(!mat) return;
+      mat.transparent = a < 1;
+      mat.opacity = a;
+      mat.needsUpdate = true;
+    });
+    if(m.wireMesh){
+      m.wireMesh.material.opacity = 0.35 * a;
+      m.wireMesh.material.needsUpdate = true;
+    }
   }
 
   // ---------- Loaded-models list UI ----------
@@ -1270,7 +1619,7 @@
           <span class="model-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
           <button class="model-remove" data-id="${m.id}" title="Remove">×</button>
         </div>
-        <div class="model-meta">${m.format} · ${m.triCount.toLocaleString()} tris · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}</div>
+        <div class="model-meta">${m.format} · <span class="model-color-tag">${colorModeLabel(m)}</span> · ${m.isPointCloud ? m.vertCount.toLocaleString() + ' pts' : m.triCount.toLocaleString() + ' tris'} · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}</div>
         <div class="model-opacity-row">
           <span class="model-opacity-label">Opacity</span>
           <input type="range" class="model-opacity-slider" data-id="${m.id}" min="0" max="100" value="${m.opacity}">
@@ -1526,6 +1875,7 @@
   function computeSectionOutlineAll(plane){
     let all = [];
     models.forEach((m) => {
+      if(m.isPointCloud) return;
       const positions = m.mesh.geometry.attributes.position.array;
       all = all.concat(computeSectionOutlineForModel(positions, m.group.position, plane));
     });
@@ -1571,8 +1921,9 @@
   function updateClipping(){
     const planes = (clipEnabled && cutPlane) ? [getClipPlane()] : [];
     models.forEach((m) => {
-      m.mesh.material.clippingPlanes = planes; m.mesh.material.needsUpdate = true;
-      m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true;
+      m.materialFlat.clippingPlanes = planes; m.materialFlat.needsUpdate = true;
+      if(m.materialColor){ m.materialColor.clippingPlanes = planes; m.materialColor.needsUpdate = true; }
+      if(m.wireMesh){ m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true; }
     });
   }
 
@@ -2000,15 +2351,45 @@
     handleFiles(e.dataTransfer.files);
   });
 
-  function handleFiles(fileList){
-    Array.from(fileList || []).forEach(handleFile);
+  function fileExtension(name){
+    const idx = name.lastIndexOf('.');
+    return idx === -1 ? '' : name.slice(idx + 1).toLowerCase();
   }
 
-  function handleFile(file){
+  function handleFiles(fileList){
+    const files = Array.from(fileList || []);
+    const companions = new Map(); // lowercase filename -> File, for .mtl and texture images in this batch
+    const loadable = [];
+    files.forEach((file) => {
+      const ext = fileExtension(file.name);
+      if(ext === 'obj' || ext === 'ply' || ext === 'stl'){
+        loadable.push(file);
+      } else {
+        companions.set(file.name.toLowerCase(), file);
+      }
+    });
+    if(loadable.length === 0 && files.length > 0){
+      alert('No .stl, .obj, or .ply file found in what was dropped/selected — only companion-type files (' +
+        files.map(f => f.name).join(', ') + ').');
+      return;
+    }
+    loadable.forEach((file) => handleFile(file, companions));
+  }
+
+  function handleFile(file, companions){
+    const ext = fileExtension(file.name);
     const reader = new FileReader();
-    reader.onload = (e) => loadSTLData(e.target.result, file.name);
     reader.onerror = () => alert('Could not read "' + file.name + '".');
-    reader.readAsArrayBuffer(file);
+    if(ext === 'obj'){
+      reader.onload = (e) => loadOBJData(e.target.result, file.name, companions || new Map());
+      reader.readAsText(file);
+    } else if(ext === 'ply'){
+      reader.onload = (e) => loadPLYData(e.target.result, file.name);
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (e) => loadSTLData(e.target.result, file.name);
+      reader.readAsArrayBuffer(file);
+    }
   }
 
   let wireOn = false;
@@ -2016,7 +2397,7 @@
   tWire.addEventListener('click', () => {
     wireOn = !wireOn;
     tWire.classList.toggle('on', wireOn);
-    models.forEach(m => { m.wireMesh.visible = wireOn; });
+    models.forEach(m => { if(m.wireMesh) m.wireMesh.visible = wireOn; });
   });
 
   let gridOn = true;
@@ -2032,6 +2413,20 @@
     autoRotate = !autoRotate;
     tSpin.classList.toggle('on', autoRotate);
   });
+
+  let showColor = true;
+  const tColor = document.getElementById('tColor');
+  tColor.addEventListener('click', () => {
+    showColor = !showColor;
+    tColor.classList.toggle('on', showColor);
+    applyColorToggle();
+  });
+  function applyColorToggle(){
+    models.forEach((m) => {
+      if(!m.colored || !m.materialColor) return;
+      m.mesh.material = showColor ? m.materialColor : m.materialFlat;
+    });
+  }
 
   const sBrightness = document.getElementById('sBrightness');
   const brightnessValue = document.getElementById('brightnessValue');
