@@ -67,15 +67,8 @@
     padding: 18px 18px 14px 18px;
     border-bottom: 1px solid var(--panel-line);
   }
-  #brand .mark{
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    color: var(--accent);
-    text-transform: uppercase;
-  }
   #brand h1{
-    margin: 6px 0 0 0;
+    margin: 0;
     font-size: 20px;
     font-weight: 600;
     letter-spacing: -0.01em;
@@ -529,18 +522,28 @@
     text-align: center;
   }
   #csScrollHint b{ color: var(--cut); font-weight: 500; }
-  #csResizeHandle{
+  .cs-resize-handle{
     position: absolute;
-    right: 2px; bottom: 2px;
     width: 14px; height: 14px;
-    cursor: nwse-resize;
+    opacity: 0.55;
+  }
+  .cs-resize-handle:hover{ opacity: 1; }
+  .cs-resize-handle::before{
+    content: '';
+    position: absolute;
+    inset: 0;
     background: linear-gradient(135deg,
       transparent 0 40%, var(--ink-dim) 40% 50%,
       transparent 50% 60%, var(--ink-dim) 60% 70%,
       transparent 70% 100%);
-    opacity: 0.55;
   }
-  #csResizeHandle:hover{ opacity: 1; }
+  #csResizeBR{ right: 2px; bottom: 2px; cursor: nwse-resize; }
+  #csResizeTL{ left: 2px; top: 2px; cursor: nwse-resize; }
+  #csResizeTL::before{ transform: rotate(180deg); }
+  #csResizeTR{ right: 2px; top: 2px; cursor: nesw-resize; }
+  #csResizeTR::before{ transform: rotate(90deg); }
+  #csResizeBL{ left: 2px; bottom: 2px; cursor: nesw-resize; }
+  #csResizeBL::before{ transform: rotate(-90deg); }
 
   ::-webkit-scrollbar{ width: 8px; }
   ::-webkit-scrollbar-thumb{ background: var(--panel-line); border-radius: 4px; }
@@ -551,7 +554,6 @@
 
   <div id="panel">
     <div id="brand">
-      <div class="mark">◱ Solid Body Inspector</div>
       <h1>STL Viewer</h1>
       <p>Load a mesh to inspect it in three dimensions.</p>
     </div>
@@ -590,6 +592,11 @@
       <div class="toggle-row">
         <label for="tTheme">Light mode</label>
         <div class="switch" id="tTheme"></div>
+      </div>
+      <div class="model-opacity-row" style="margin-top:10px;">
+        <span class="model-opacity-label">Brightness</span>
+        <input type="range" class="model-opacity-slider" id="sBrightness" min="20" max="150" value="100">
+        <span class="model-opacity-value" id="brightnessValue">100%</span>
       </div>
       <button class="action" id="btnReset">Reset view</button>
     </div>
@@ -640,7 +647,10 @@
         <button id="btnCsMeasureClear" title="Clear measurement" style="display:none;">Clear</button>
       </div>
       <div id="csScrollHint">Scroll here to <b>move the cut</b> through the model</div>
-      <div id="csResizeHandle" title="Drag to resize"></div>
+      <div class="cs-resize-handle" id="csResizeTL" title="Drag to resize"></div>
+      <div class="cs-resize-handle" id="csResizeTR" title="Drag to resize"></div>
+      <div class="cs-resize-handle" id="csResizeBL" title="Drag to resize"></div>
+      <div class="cs-resize-handle" id="csResizeBR" title="Drag to resize"></div>
     </div>
 
     <div id="emptyState"><div class="glyph">No mesh loaded — <b>load an STL file</b> to begin</div></div>
@@ -666,17 +676,34 @@
   holder.appendChild(renderer.domElement);
   const canvas = renderer.domElement;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  // Base intensities for each light — the brightness slider scales these,
+  // rather than being tracked as separate state, so "100%" always means
+  // exactly this original balance between the three lights.
+  const BASE_LIGHT_INTENSITY = { ambient: 0.45, key: 1.05, fill: 0.25, rim: 0.18 };
+  let brightness = 1; // 0.2–1.5, set by the Brightness slider
+
+  const ambient = new THREE.AmbientLight(0xffffff, BASE_LIGHT_INTENSITY.ambient);
   scene.add(ambient);
-  const key = new THREE.DirectionalLight(0xffffff, 0.9);
-  key.position.set(1, 1.4, 1);
+  // Key/fill/rim lights are repositioned every frame in updateLightsToCamera()
+  // below to follow the camera, so their initial positions here don't matter
+  // much — they're immediately overwritten once orbiting starts.
+  const key = new THREE.DirectionalLight(0xffffff, BASE_LIGHT_INTENSITY.key);
+  key.position.set(0.15, 1, 0.25);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0x88aaff, 0.35);
-  fill.position.set(-1, 0.4, -1);
+  const fill = new THREE.DirectionalLight(0x88aaff, BASE_LIGHT_INTENSITY.fill);
+  fill.position.set(-0.6, 0.5, -0.4);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight(0xff9d3d, 0.25);
-  rim.position.set(-0.5, -1, 0.8);
+  const rim = new THREE.DirectionalLight(0xff9d3d, BASE_LIGHT_INTENSITY.rim);
+  rim.position.set(-0.3, 0.8, -0.7);
   scene.add(rim);
+
+  function setBrightness(factor){
+    brightness = factor;
+    ambient.intensity = BASE_LIGHT_INTENSITY.ambient * factor;
+    key.intensity = BASE_LIGHT_INTENSITY.key * factor;
+    fill.intensity = BASE_LIGHT_INTENSITY.fill * factor;
+    rim.intensity = BASE_LIGHT_INTENSITY.rim * factor;
+  }
 
   // ---------- Theme (light/dark) ----------
   const THEME_3D = {
@@ -774,8 +801,37 @@
     camera.position.copy(target).addScaledVector(dir, radius);
     camera.up.copy(up);
     camera.lookAt(target);
+    updateLightsToCamera();
   }
   updateCamera();
+
+  // Keeps the light rig glued to the camera: the key light shines straight
+  // from the camera toward whatever it's looking at (like a headlamp), and
+  // the fill/rim lights sit just off to the sides for some dimensionality.
+  // Since this runs every time updateCamera does, rotating, zooming, or
+  // panning all carry the lighting along with the view automatically.
+  function updateLightsToCamera(){
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    const right = new THREE.Vector3().crossVectors(camDir, camera.up).normalize();
+    const up = camera.up;
+
+    key.position.copy(camera.position);
+    key.target.position.copy(target);
+    key.target.updateMatrixWorld();
+
+    fill.position.copy(camera.position)
+      .addScaledVector(right, -radius * 0.35)
+      .addScaledVector(up, radius * 0.2);
+    fill.target.position.copy(target);
+    fill.target.updateMatrixWorld();
+
+    rim.position.copy(camera.position)
+      .addScaledVector(right, radius * 0.4)
+      .addScaledVector(up, -radius * 0.15);
+    rim.target.position.copy(target);
+    rim.target.updateMatrixWorld();
+  }
 
   // Applies a drag as two incremental rotations around the camera's OWN
   // current right/up axes (not fixed world axes) — this is what keeps
@@ -1844,22 +1900,56 @@
     updateCrossSectionView(lastCsSegArray);
   }
 
+  // Locks the panel into explicit left/top positioning (relative to its
+  // actual offsetParent), replacing the initial CSS `top/right` anchor.
+  // Called at the start of any drag or resize so both interactions always
+  // work in one consistent coordinate space — this, plus using mouse DELTAS
+  // instead of re-deriving an absolute position each time, is what fixes
+  // the "placement drifts slightly" bug: the old code mixed a
+  // viewport-relative getBoundingClientRect() position with `left`/`top`
+  // values that are actually relative to the panel's positioned ancestor
+  // (#viewport), so every drag was off by that ancestor's own offset.
+  function pinPanelToExplicitPosition(){
+    csPanel.style.left = csPanel.offsetLeft + 'px';
+    csPanel.style.top = csPanel.offsetTop + 'px';
+    csPanel.style.right = 'auto';
+  }
+
   (function makeCsPanelResizable(){
-    const handle = document.getElementById('csResizeHandle');
-    let resizing = null;
-    handle.addEventListener('mousedown', (e) => {
-      resizing = { startX: e.clientX, startY: e.clientY, startW: CS_W, startH: CS_H };
-      e.preventDefault();
-      e.stopPropagation();
+    // corner: which edges move when you drag this handle, and which
+    // opposite corner needs to stay visually anchored in place.
+    const handles = [
+      { id: 'csResizeBR', growX:  1, growY:  1 },
+      { id: 'csResizeBL', growX: -1, growY:  1 },
+      { id: 'csResizeTR', growX:  1, growY: -1 },
+      { id: 'csResizeTL', growX: -1, growY: -1 },
+    ];
+    handles.forEach(({ id, growX, growY }) => {
+      const handle = document.getElementById(id);
+      let resizing = null;
+      handle.addEventListener('mousedown', (e) => {
+        pinPanelToExplicitPosition();
+        resizing = {
+          startX: e.clientX, startY: e.clientY,
+          startW: CS_W, startH: CS_H,
+          startLeft: csPanel.offsetLeft, startTop: csPanel.offsetTop
+        };
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if(!resizing) return;
+        const dx = (e.clientX - resizing.startX) * growX;
+        const dy = (e.clientY - resizing.startY) * growY;
+        resizeCsCanvas(resizing.startW + dx, resizing.startH + dy);
+        // Re-anchor whichever edges this handle grows FROM, using the
+        // actual (possibly clamped) resulting size rather than the
+        // requested one, so it never drifts out of sync.
+        if(growX < 0) csPanel.style.left = (resizing.startLeft + (resizing.startW - CS_W)) + 'px';
+        if(growY < 0) csPanel.style.top = (resizing.startTop + (resizing.startH - CS_H)) + 'px';
+      });
+      window.addEventListener('mouseup', () => { resizing = null; });
     });
-    window.addEventListener('mousemove', (e) => {
-      if(!resizing) return;
-      resizeCsCanvas(
-        resizing.startW + (e.clientX - resizing.startX),
-        resizing.startH + (e.clientY - resizing.startY)
-      );
-    });
-    window.addEventListener('mouseup', () => { resizing = null; });
   })();
 
   // draggable mini window (drag by its header)
@@ -1867,20 +1957,22 @@
     const header = document.getElementById('csHeader');
     let drag = null;
     header.addEventListener('mousedown', (e) => {
-      const rect = csPanel.getBoundingClientRect();
-      drag = { offX: e.clientX - rect.left, offY: e.clientY - rect.top };
-      csPanel.style.right = 'auto';
-      csPanel.style.left = rect.left + 'px';
-      csPanel.style.top = rect.top + 'px';
+      pinPanelToExplicitPosition();
+      drag = {
+        startMouseX: e.clientX, startMouseY: e.clientY,
+        startLeft: csPanel.offsetLeft, startTop: csPanel.offsetTop
+      };
       e.preventDefault();
     });
     window.addEventListener('mousemove', (e) => {
       if(!drag) return;
-      const w = csPanel.offsetWidth, h = csPanel.offsetHeight;
-      let left = e.clientX - drag.offX;
-      let top = e.clientY - drag.offY;
-      left = Math.max(4, Math.min(window.innerWidth - w - 4, left));
-      top = Math.max(4, Math.min(window.innerHeight - h - 4, top));
+      const parent = csPanel.offsetParent || document.getElementById('viewport');
+      const maxLeft = Math.max(0, parent.clientWidth - csPanel.offsetWidth);
+      const maxTop = Math.max(0, parent.clientHeight - csPanel.offsetHeight);
+      let left = drag.startLeft + (e.clientX - drag.startMouseX);
+      let top = drag.startTop + (e.clientY - drag.startMouseY);
+      left = Math.max(0, Math.min(maxLeft, left));
+      top = Math.max(0, Math.min(maxTop, top));
       csPanel.style.left = left + 'px';
       csPanel.style.top = top + 'px';
     });
@@ -1939,6 +2031,14 @@
   tSpin.addEventListener('click', () => {
     autoRotate = !autoRotate;
     tSpin.classList.toggle('on', autoRotate);
+  });
+
+  const sBrightness = document.getElementById('sBrightness');
+  const brightnessValue = document.getElementById('brightnessValue');
+  sBrightness.addEventListener('input', () => {
+    const pct = Number(sBrightness.value);
+    setBrightness(pct / 100);
+    brightnessValue.textContent = pct + '%';
   });
 
   document.getElementById('btnReset').addEventListener('click', () => {
