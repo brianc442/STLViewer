@@ -570,9 +570,9 @@
           <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
           <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
         </svg>
-        <div>Drop .stl files here<br>or click to browse — add as many as you like</div>
+        <div>Drop .stl or .ply files here<br>or click to browse — add as many as you like</div>
       </div>
-      <input type="file" id="fileInput" accept=".stl" multiple>
+      <input type="file" id="fileInput" accept=".stl,.ply" multiple>
     </div>
 
     <div class="section" id="modelsSection" style="display:none;">
@@ -1200,6 +1200,67 @@
     geometry.computeBoundingBox();
 
     buildMeshModel(geometry, fileName, parsed.format, 'flat', false, size);
+  }
+
+  function buildVertexColorMaterial(){
+    return new THREE.MeshPhongMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      specular: 0x111111,
+      shininess: 18,
+      flatShading: true,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1,
+      clippingPlanes: []
+    });
+  }
+
+  function loadPLYData(buffer, fileName){
+    let geometry;
+    try {
+      geometry = new THREE.PLYLoader().parse(buffer);
+    } catch(err){
+      alert('Could not parse "' + fileName + '" as PLY: ' + err.message);
+      return;
+    }
+    if(!geometry.attributes.position || geometry.attributes.position.count < 1){
+      alert('No vertex data found in "' + fileName + '" — is this a valid PLY file?');
+      return;
+    }
+
+    const hasColor = !!geometry.attributes.color;
+    const isPointCloud = !geometry.index;
+
+    if(isPointCloud){
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox;
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      geometry.translate(-center.x, -center.y, -center.z);
+      geometry.computeBoundingBox();
+      buildPointCloudModel(geometry, fileName, 'PLY', hasColor, size);
+      return;
+    }
+
+    const nonIndexed = geometry.toNonIndexed();
+    if(!nonIndexed.attributes.position || nonIndexed.attributes.position.count < 3){
+      alert('No triangle data found in "' + fileName + '" — is this a valid PLY file?');
+      return;
+    }
+    nonIndexed.computeBoundingBox();
+    const bbox = nonIndexed.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    nonIndexed.translate(-center.x, -center.y, -center.z);
+    nonIndexed.computeVertexNormals();
+    nonIndexed.computeBoundingBox();
+
+    buildMeshModel(nonIndexed, fileName, 'PLY', hasColor ? 'vertexColor' : 'flat', hasColor, size, hasColor ? buildVertexColorMaterial() : undefined);
   }
 
   // Lays every loaded model out side by side along X, each resting with
@@ -2046,11 +2107,22 @@
     Array.from(fileList || []).forEach(handleFile);
   }
 
+  function fileExtension(name){
+    const idx = name.lastIndexOf('.');
+    return idx === -1 ? '' : name.slice(idx + 1).toLowerCase();
+  }
+
   function handleFile(file){
+    const ext = fileExtension(file.name);
     const reader = new FileReader();
-    reader.onload = (e) => loadSTLData(e.target.result, file.name);
     reader.onerror = () => alert('Could not read "' + file.name + '".');
-    reader.readAsArrayBuffer(file);
+    if(ext === 'ply'){
+      reader.onload = (e) => loadPLYData(e.target.result, file.name);
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (e) => loadSTLData(e.target.result, file.name);
+      reader.readAsArrayBuffer(file);
+    }
   }
 
   let wireOn = false;
