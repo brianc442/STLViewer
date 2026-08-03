@@ -1173,6 +1173,33 @@
     return finalizeNewModel(model);
   }
 
+  function buildPointCloudModel(geometry, fileName, format, colored, size){
+    const pointSize = Math.max(size.length() * 0.01, 0.005);
+    const materialFlat = new THREE.PointsMaterial({
+      color: THEME_3D[currentTheme].modelColor, size: pointSize
+    });
+    const materialColor = colored ? new THREE.PointsMaterial({ vertexColors: true, size: pointSize }) : null;
+
+    const pointsObj = new THREE.Points(geometry, (colored && materialColor && showColor) ? materialColor : materialFlat);
+
+    const group = new THREE.Group();
+    group.add(pointsObj);
+    scene.add(group);
+
+    const model = {
+      id: ++modelIdCounter,
+      name: fileName,
+      group, mesh: pointsObj, wireMesh: null,
+      isPointCloud: true,
+      format, colorMode: colored ? 'vertexColor' : 'flat', colored,
+      materialFlat, materialColor,
+      triCount: 0,
+      vertCount: geometry.attributes.position.count,
+      size, opacity: 100
+    };
+    return finalizeNewModel(model);
+  }
+
   function loadSTLData(buffer, fileName){
     let parsed;
     try {
@@ -2130,7 +2157,7 @@
   tWire.addEventListener('click', () => {
     wireOn = !wireOn;
     tWire.classList.toggle('on', wireOn);
-    models.forEach(m => { m.wireMesh.visible = wireOn; });
+    models.forEach(m => { if(m.wireMesh) m.wireMesh.visible = wireOn; });
   });
 
   let gridOn = true;
