@@ -570,9 +570,9 @@
           <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
           <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
         </svg>
-        <div>Drop .stl or .ply files here<br>or click to browse — add as many as you like</div>
+        <div>Drop .stl, .obj, or .ply files here<br>or click to browse — add as many as you like</div>
       </div>
-      <input type="file" id="fileInput" accept=".stl,.ply" multiple>
+      <input type="file" id="fileInput" accept=".stl,.obj,.ply" multiple>
     </div>
 
     <div class="section" id="modelsSection" style="display:none;">
@@ -1288,6 +1288,147 @@
     nonIndexed.computeBoundingBox();
 
     buildMeshModel(nonIndexed, fileName, 'PLY', hasColor ? 'vertexColor' : 'flat', hasColor, size, hasColor ? buildVertexColorMaterial() : undefined);
+  }
+
+  function loadOBJData(objText, fileName, companions){
+    // MTL support lands in Task 7 — for now, always load without materials.
+    finishOBJLoad(objText, fileName, null, companions);
+  }
+
+  function finishOBJLoad(objText, fileName, mtlText, companions){
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url) => {
+      const base = url.split('/').pop().toLowerCase();
+      const file = companions.get(base);
+      if(!file){
+        console.warn(`Texture "${url}" referenced by "${fileName}" was not found in this batch — using material color only.`);
+        return url;
+      }
+      return URL.createObjectURL(file);
+    });
+
+    let materials = null;
+    if(mtlText){
+      try {
+        const mtlLoader = new THREE.MTLLoader(manager);
+        materials = mtlLoader.parse(mtlText, '');
+        materials.preload();
+      } catch(err){
+        console.warn(`Could not parse material file for "${fileName}": ${err.message}`);
+        materials = null;
+      }
+    }
+
+    const objLoader = new THREE.OBJLoader(manager);
+    if(materials) objLoader.setMaterials(materials);
+
+    let group;
+    try {
+      group = objLoader.parse(objText);
+    } catch(err){
+      alert('Could not parse "' + fileName + '" as OBJ: ' + err.message);
+      return;
+    }
+
+    const meshChildren = [];
+    group.traverse((child) => { if(child.isMesh) meshChildren.push(child); });
+
+    if(meshChildren.length === 0){
+      loadOBJPointCloudFallback(objText, fileName);
+      return;
+    }
+
+    if(meshChildren.length === 1){
+      finalizeSingleMaterialOBJ(meshChildren[0], fileName);
+    } else {
+      finalizeMultiMaterialOBJ(meshChildren, fileName);
+    }
+  }
+
+  function finalizeSingleMaterialOBJ(child, fileName){
+    let geometry = child.geometry;
+    if(!geometry.attributes.position || geometry.attributes.position.count < 3){
+      alert('No triangle data found in "' + fileName + '" — is this a valid OBJ file?');
+      return;
+    }
+    if(geometry.index) geometry = geometry.toNonIndexed();
+
+    const hasVertexColor = !!geometry.attributes.color;
+    const srcMat = Array.isArray(child.material) ? child.material[0] : child.material;
+    const hasTexture = !!(srcMat && srcMat.map);
+    const hasFlatKd = !!(srcMat && srcMat.color && srcMat.color.getHex() !== 0xffffff);
+
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+
+    let colorMode = 'flat';
+    let colored = false;
+    let materialColorOverride = null;
+
+    if(hasTexture){
+      colorMode = 'texture'; colored = true;
+      materialColorOverride = new THREE.MeshPhongMaterial({
+        color: srcMat.color ? srcMat.color.clone() : new THREE.Color(0xffffff),
+        map: srcMat.map,
+        specular: 0x111111, shininess: 18, flatShading: true,
+        side: THREE.DoubleSide, transparent: false, opacity: 1, clippingPlanes: []
+      });
+    } else if(hasVertexColor){
+      colorMode = 'vertexColor'; colored = true;
+      materialColorOverride = buildVertexColorMaterial();
+    } else if(hasFlatKd){
+      colorMode = 'material'; colored = true;
+      materialColorOverride = new THREE.MeshPhongMaterial({
+        color: srcMat.color.clone(),
+        specular: 0x111111, shininess: 18, flatShading: true,
+        side: THREE.DoubleSide, transparent: false, opacity: 1, clippingPlanes: []
+      });
+    }
+
+    buildMeshModel(geometry, fileName, 'OBJ', colorMode, colored, size, materialColorOverride);
+  }
+
+  function loadOBJPointCloudFallback(objText, fileName){
+    const positions = [];
+    const colors = [];
+    let hasColor = false;
+    const vertexRe = /^v\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)(?:\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+))?/gm;
+    let m;
+    while((m = vertexRe.exec(objText)) !== null){
+      positions.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+      if(m[4] !== undefined){
+        hasColor = true;
+        colors.push(parseFloat(m[4]), parseFloat(m[5]), parseFloat(m[6]));
+      } else {
+        colors.push(1, 1, 1);
+      }
+    }
+    if(positions.length < 3){
+      alert('No vertex data found in "' + fileName + '" — is this a valid OBJ file?');
+      return;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    if(hasColor) geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    geometry.computeBoundingBox();
+
+    buildPointCloudModel(geometry, fileName, 'OBJ', hasColor, size);
   }
 
   // Lays every loaded model out side by side along X, each resting with
@@ -2130,20 +2271,34 @@
     handleFiles(e.dataTransfer.files);
   });
 
-  function handleFiles(fileList){
-    Array.from(fileList || []).forEach(handleFile);
-  }
-
   function fileExtension(name){
     const idx = name.lastIndexOf('.');
     return idx === -1 ? '' : name.slice(idx + 1).toLowerCase();
   }
 
-  function handleFile(file){
+  function handleFiles(fileList){
+    const files = Array.from(fileList || []);
+    const companions = new Map(); // lowercase filename -> File, for .mtl and texture images in this batch
+    const loadable = [];
+    files.forEach((file) => {
+      const ext = fileExtension(file.name);
+      if(ext === 'obj' || ext === 'ply' || ext === 'stl'){
+        loadable.push(file);
+      } else {
+        companions.set(file.name.toLowerCase(), file);
+      }
+    });
+    loadable.forEach((file) => handleFile(file, companions));
+  }
+
+  function handleFile(file, companions){
     const ext = fileExtension(file.name);
     const reader = new FileReader();
     reader.onerror = () => alert('Could not read "' + file.name + '".');
-    if(ext === 'ply'){
+    if(ext === 'obj'){
+      reader.onload = (e) => loadOBJData(e.target.result, file.name, companions || new Map());
+      reader.readAsText(file);
+    } else if(ext === 'ply'){
       reader.onload = (e) => loadPLYData(e.target.result, file.name);
       reader.readAsArrayBuffer(file);
     } else {
