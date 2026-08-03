@@ -1355,7 +1355,10 @@
       return;
     }
 
-    if(meshChildren.length === 1){
+    const isMultiMaterial = meshChildren.length > 1 ||
+      meshChildren.some((child) => Array.isArray(child.material) && child.material.length > 1);
+
+    if(!isMultiMaterial){
       finalizeSingleMaterialOBJ(meshChildren[0], fileName);
     } else {
       finalizeMultiMaterialOBJ(meshChildren, fileName);
@@ -1415,17 +1418,41 @@
   function finalizeMultiMaterialOBJ(meshChildren, fileName){
     const geometries = meshChildren.map((child) => {
       let geo = child.geometry;
-      if(geo.index) geo = geo.toNonIndexed();
+      const materialsArr = Array.isArray(child.material) ? child.material : [child.material];
+
       if(!geo.attributes.color){
-        const mat = Array.isArray(child.material) ? child.material[0] : child.material;
-        const c = (mat && mat.color) ? mat.color : new THREE.Color(0xffffff);
         const count = geo.attributes.position.count;
         const colors = new Float32Array(count * 3);
+        const fallback = (materialsArr[0] && materialsArr[0].color) ? materialsArr[0].color : new THREE.Color(0xffffff);
         for(let i = 0; i < count; i++){
-          colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+          colors[i * 3] = fallback.r; colors[i * 3 + 1] = fallback.g; colors[i * 3 + 2] = fallback.b;
         }
+
+        const groups = (geo.groups && geo.groups.length)
+          ? geo.groups
+          : [{ start: 0, count: geo.index ? geo.index.count : count, materialIndex: 0 }];
+
+        groups.forEach((group) => {
+          const mat = materialsArr[group.materialIndex] || materialsArr[0];
+          const c = (mat && mat.color) ? mat.color : fallback;
+          if(geo.index){
+            for(let i = group.start; i < group.start + group.count; i++){
+              const vIdx = geo.index.array[i];
+              colors[vIdx * 3] = c.r; colors[vIdx * 3 + 1] = c.g; colors[vIdx * 3 + 2] = c.b;
+            }
+          } else {
+            for(let i = group.start; i < group.start + group.count; i++){
+              colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+            }
+          }
+        });
+
         geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       }
+
+      if(geo.index) geo = geo.toNonIndexed();
+      geo.deleteAttribute('normal');
+      geo.deleteAttribute('uv');
       return geo;
     });
 
@@ -2341,6 +2368,11 @@
         companions.set(file.name.toLowerCase(), file);
       }
     });
+    if(loadable.length === 0 && files.length > 0){
+      alert('No .stl, .obj, or .ply file found in what was dropped/selected — only companion-type files (' +
+        files.map(f => f.name).join(', ') + ').');
+      return;
+    }
     loadable.forEach((file) => handleFile(file, companions));
   }
 
