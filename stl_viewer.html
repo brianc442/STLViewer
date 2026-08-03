@@ -182,6 +182,7 @@
     color: var(--ink-dim);
     margin-top: 3px;
   }
+  .model-color-tag{ color: var(--accent); }
   .model-opacity-row{
     display:flex; align-items:center; gap: 8px;
     margin-top: 7px;
@@ -742,8 +743,8 @@
     rebuildGridForTheme();
     const modelColor = THEME_3D[currentTheme].modelColor;
     models.forEach((m) => {
-      m.mesh.material.color.setHex(modelColor);
-      m.mesh.material.needsUpdate = true;
+      m.materialFlat.color.setHex(modelColor);
+      m.materialFlat.needsUpdate = true;
     });
   }
 
@@ -872,7 +873,7 @@
     if(baseArmed){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
-      const meshList = models.map(m => m.mesh);
+      const meshList = models.filter(m => !m.isPointCloud).map(m => m.mesh);
       const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
       if(hit && hit.face){
         const owner = models.find(m => m.mesh === hit.object);
@@ -1096,6 +1097,78 @@
   }
 
   // ---------- Build a model from parsed STL, added to the collection ----------
+  function buildFlatMaterial(){
+    return new THREE.MeshPhongMaterial({
+      color: THEME_3D[currentTheme].modelColor,
+      specular: 0x111111,
+      shininess: 18,
+      flatShading: true,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1,
+      clippingPlanes: []
+    });
+  }
+
+  function buildWireMaterial(){
+    return new THREE.MeshBasicMaterial({
+      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
+    });
+  }
+
+  function colorModeLabel(m){
+    switch(m.colorMode){
+      case 'texture': return 'Textured';
+      case 'vertexColor': return 'Vertex color';
+      case 'material': return 'Material color';
+      default: return 'Flat';
+    }
+  }
+
+  function finalizeNewModel(model){
+    models.push(model);
+    relayoutModels();
+    recomputeCombinedBounds();
+    frameCameraOnModels();
+    renderModelList();
+
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('btnDrawSection').disabled = false;
+    document.getElementById('btnPickBase').disabled = false;
+
+    if(cutPlane) refreshSection();
+    return model;
+  }
+
+  function buildMeshModel(geometry, fileName, format, colorMode, colored, size, materialColorOverride){
+    const materialFlat = buildFlatMaterial();
+    const materialColor = colored ? (materialColorOverride || null) : null;
+
+    const meshObj = new THREE.Mesh(geometry, (colored && materialColor) ? materialColor : materialFlat);
+
+    const wireGeo = geometry.clone();
+    const wireMeshObj = new THREE.Mesh(wireGeo, buildWireMaterial());
+    wireMeshObj.visible = wireOn;
+
+    const group = new THREE.Group();
+    group.add(meshObj);
+    group.add(wireMeshObj);
+    scene.add(group);
+
+    const model = {
+      id: ++modelIdCounter,
+      name: fileName,
+      group, mesh: meshObj, wireMesh: wireMeshObj,
+      isPointCloud: false,
+      format, colorMode, colored,
+      materialFlat, materialColor,
+      triCount: geometry.attributes.position.count / 3,
+      vertCount: geometry.attributes.position.count,
+      size, opacity: 100
+    };
+    return finalizeNewModel(model);
+  }
+
   function loadSTLData(buffer, fileName){
     let parsed;
     try {
@@ -1114,9 +1187,6 @@
     geometry.computeVertexNormals();
     geometry.computeBoundingBox();
 
-    // Center this model's own geometry on its own local origin — every
-    // model keeps its own independent local space, and is positioned in
-    // the scene purely via its group's transform (see relayoutModels).
     const bbox = geometry.boundingBox;
     const size = new THREE.Vector3();
     bbox.getSize(size);
@@ -1125,52 +1195,7 @@
     geometry.translate(-center.x, -center.y, -center.z);
     geometry.computeBoundingBox();
 
-    const material = new THREE.MeshPhongMaterial({
-      color: THEME_3D[currentTheme].modelColor,
-      specular: 0x111111,
-      shininess: 18,
-      flatShading: true,
-      side: THREE.DoubleSide,
-      transparent: false,
-      opacity: 1,
-      clippingPlanes: []
-    });
-    const meshObj = new THREE.Mesh(geometry, material);
-
-    const wireGeo = geometry.clone();
-    const wireMat = new THREE.MeshBasicMaterial({
-      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
-    });
-    const wireMeshObj = new THREE.Mesh(wireGeo, wireMat);
-    wireMeshObj.visible = wireOn;
-
-    const group = new THREE.Group();
-    group.add(meshObj);
-    group.add(wireMeshObj);
-    scene.add(group);
-
-    const model = {
-      id: ++modelIdCounter,
-      name: fileName,
-      group, mesh: meshObj, wireMesh: wireMeshObj,
-      format: parsed.format,
-      triCount: parsed.positions.length / 9,
-      vertCount: parsed.positions.length / 3,
-      size,
-      opacity: 100
-    };
-    models.push(model);
-
-    relayoutModels();
-    recomputeCombinedBounds();
-    frameCameraOnModels();
-    renderModelList();
-
-    document.getElementById('emptyState').style.display = 'none';
-    document.getElementById('btnDrawSection').disabled = false;
-    document.getElementById('btnPickBase').disabled = false;
-
-    if(cutPlane) refreshSection(); // fold the newly added model into the live section
+    buildMeshModel(geometry, fileName, parsed.format, 'flat', false, size);
   }
 
   // Lays every loaded model out side by side along X, each resting with
@@ -1224,8 +1249,10 @@
     if(idx === -1) return;
     const m = models[idx];
     scene.remove(m.group);
-    m.mesh.geometry.dispose(); m.mesh.material.dispose();
-    m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
+    m.mesh.geometry.dispose();
+    m.materialFlat.dispose();
+    if(m.materialColor) m.materialColor.dispose();
+    if(m.wireMesh){ m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose(); }
     models.splice(idx, 1);
 
     relayoutModels();
@@ -1247,11 +1274,16 @@
     if(!m) return;
     m.opacity = pct;
     const a = pct / 100;
-    m.mesh.material.transparent = a < 1;
-    m.mesh.material.opacity = a;
-    m.mesh.material.needsUpdate = true;
-    m.wireMesh.material.opacity = 0.35 * a;
-    m.wireMesh.material.needsUpdate = true;
+    [m.materialFlat, m.materialColor].forEach((mat) => {
+      if(!mat) return;
+      mat.transparent = a < 1;
+      mat.opacity = a;
+      mat.needsUpdate = true;
+    });
+    if(m.wireMesh){
+      m.wireMesh.material.opacity = 0.35 * a;
+      m.wireMesh.material.needsUpdate = true;
+    }
   }
 
   // ---------- Loaded-models list UI ----------
@@ -1274,7 +1306,7 @@
           <span class="model-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
           <button class="model-remove" data-id="${m.id}" title="Remove">×</button>
         </div>
-        <div class="model-meta">${m.format} · ${m.triCount.toLocaleString()} tris · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}</div>
+        <div class="model-meta">${m.format} · <span class="model-color-tag">${colorModeLabel(m)}</span> · ${m.isPointCloud ? m.vertCount.toLocaleString() + ' pts' : m.triCount.toLocaleString() + ' tris'} · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}</div>
         <div class="model-opacity-row">
           <span class="model-opacity-label">Opacity</span>
           <input type="range" class="model-opacity-slider" data-id="${m.id}" min="0" max="100" value="${m.opacity}">
@@ -1530,6 +1562,7 @@
   function computeSectionOutlineAll(plane){
     let all = [];
     models.forEach((m) => {
+      if(m.isPointCloud) return;
       const positions = m.mesh.geometry.attributes.position.array;
       all = all.concat(computeSectionOutlineForModel(positions, m.group.position, plane));
     });
@@ -1575,8 +1608,9 @@
   function updateClipping(){
     const planes = (clipEnabled && cutPlane) ? [getClipPlane()] : [];
     models.forEach((m) => {
-      m.mesh.material.clippingPlanes = planes; m.mesh.material.needsUpdate = true;
-      m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true;
+      m.materialFlat.clippingPlanes = planes; m.materialFlat.needsUpdate = true;
+      if(m.materialColor){ m.materialColor.clippingPlanes = planes; m.materialColor.needsUpdate = true; }
+      if(m.wireMesh){ m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true; }
     });
   }
 
