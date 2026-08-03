@@ -598,6 +598,10 @@
         <label for="tTheme">Light mode</label>
         <div class="switch" id="tTheme"></div>
       </div>
+      <div class="toggle-row">
+        <label for="tColor">Show color</label>
+        <div class="switch on" id="tColor"></div>
+      </div>
       <div class="model-opacity-row" style="margin-top:10px;">
         <span class="model-opacity-label">Brightness</span>
         <input type="range" class="model-opacity-slider" id="sBrightness" min="20" max="150" value="100">
@@ -1144,7 +1148,7 @@
     const materialFlat = buildFlatMaterial();
     const materialColor = colored ? (materialColorOverride || null) : null;
 
-    const meshObj = new THREE.Mesh(geometry, (colored && materialColor) ? materialColor : materialFlat);
+    const meshObj = new THREE.Mesh(geometry, (colored && materialColor && showColor) ? materialColor : materialFlat);
 
     const wireGeo = geometry.clone();
     const wireMeshObj = new THREE.Mesh(wireGeo, buildWireMaterial());
@@ -2070,6 +2074,20 @@
     autoRotate = !autoRotate;
     tSpin.classList.toggle('on', autoRotate);
   });
+
+  let showColor = true;
+  const tColor = document.getElementById('tColor');
+  tColor.addEventListener('click', () => {
+    showColor = !showColor;
+    tColor.classList.toggle('on', showColor);
+    applyColorToggle();
+  });
+  function applyColorToggle(){
+    models.forEach((m) => {
+      if(!m.colored || !m.materialColor) return;
+      m.mesh.material = showColor ? m.materialColor : m.materialFlat;
+    });
+  }
 
   const sBrightness = document.getElementById('sBrightness');
   const brightnessValue = document.getElementById('brightnessValue');
