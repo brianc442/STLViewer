@@ -1,0 +1,1966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>STL Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg: #0d1210;
+    --panel: #121a17;
+    --panel-line: #22302a;
+    --ink: #d9e3dc;
+    --ink-dim: #7f9488;
+    --accent: #ff9d3d;
+    --accent-dim: #9a622a;
+    --cut: #ffe14d;
+    --base: #6bb8ff;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+    --sans: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+  }
+  body.theme-light{
+    --bg: #eef1ee;
+    --panel: #ffffff;
+    --panel-line: #d7ddd8;
+    --ink: #1b241e;
+    --ink-dim: #6d7972;
+    --accent: #c96a1f;
+    --accent-dim: #e3b385;
+    --cut: #a97a00;
+    --base: #1f6fb2;
+  }
+  body, #app, .section, #panel, #brand, button.action, .switch, #crossSectionPanel{
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    overflow:hidden;
+  }
+  #app{
+    position:relative;
+    width:100vw; height:100vh;
+    display:flex;
+    background-image:
+      linear-gradient(var(--panel-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--panel-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: -1px -1px;
+  }
+
+  /* ---------- Side panel ---------- */
+  #panel{
+    width: 280px;
+    min-width: 280px;
+    height:100%;
+    background: var(--panel);
+    border-right: 1px solid var(--panel-line);
+    display:flex;
+    flex-direction:column;
+    z-index: 5;
+    overflow-y: auto;
+  }
+  #brand{
+    padding: 18px 18px 14px 18px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  #brand .mark{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  #brand h1{
+    margin: 6px 0 0 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  #brand p{
+    margin: 4px 0 0 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+
+  .section{
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  .section-label{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin: 0 0 10px 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+
+  #dropzone{
+    border: 1px dashed var(--panel-line);
+    border-radius: 3px;
+    padding: 22px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+    font-size: 12.5px;
+    color: var(--ink-dim);
+  }
+  #dropzone:hover, #dropzone.drag{
+    border-color: var(--accent-dim);
+    background: rgba(255,157,61,0.05);
+    color: var(--ink);
+  }
+  #dropzone svg{ display:block; margin: 0 auto 8px auto; opacity: 0.6; }
+  #dropzone .file-name{
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-top: 6px;
+    word-break: break-all;
+  }
+  #fileInput{ display:none; }
+
+  .stat-row{
+    display:flex; justify-content:space-between;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .stat-row span:first-child{ color: var(--ink-dim); }
+  .stat-row span:last-child{ color: var(--ink); }
+
+  #modelSummary{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-dim);
+  }
+  #modelList{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .model-row{
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.015);
+  }
+  .model-row-top{
+    display:flex; align-items:center; justify-content:space-between;
+    gap: 8px;
+  }
+  .model-name{
+    font-size: 12.5px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .model-remove{
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .model-remove:hover{ color: #ff6b6b; background: rgba(255,107,107,0.1); }
+  .model-meta{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    margin-top: 3px;
+  }
+  .model-opacity-row{
+    display:flex; align-items:center; gap: 8px;
+    margin-top: 7px;
+  }
+  .model-opacity-label{
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    flex-shrink: 0;
+  }
+  .model-opacity-slider{
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--panel-line);
+    outline: none;
+    cursor: pointer;
+  }
+  .model-opacity-slider::-webkit-slider-thumb{
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+  }
+  .model-opacity-slider::-moz-range-thumb{
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+  }
+  .model-opacity-value{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink);
+    width: 34px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 8px 0;
+    font-size: 13px;
+  }
+  .toggle-row label{ cursor:pointer; }
+  .switch{
+    position:relative; width: 34px; height: 18px;
+    background: #1c2622; border:1px solid var(--panel-line);
+    border-radius: 10px; cursor:pointer;
+    transition: background .15s ease;
+    flex-shrink:0;
+  }
+  .switch.on{ background: var(--accent-dim); }
+  .switch::after{
+    content:''; position:absolute; top:2px; left:2px;
+    width: 12px; height:12px; border-radius:50%;
+    background: var(--ink-dim);
+    transition: left .15s ease, background .15s ease;
+  }
+  .switch.on::after{ left: 17px; background: var(--accent); }
+
+  button.action{
+    width:100%;
+    background: transparent;
+    border: 1px solid var(--panel-line);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    padding: 9px 10px;
+    border-radius: 3px;
+    cursor:pointer;
+    margin-top: 8px;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  button.action:hover:not(:disabled){
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  button.action:disabled{
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  button.action.primary{
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+  button.action.primary.blue{
+    border-color: #2c5a80;
+    color: var(--base);
+  }
+  button.action.active{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #1a1208;
+    font-weight: 600;
+  }
+  button.action.active.blue{
+    background: var(--base);
+    border-color: var(--base);
+    color: #061622;
+  }
+  button.action.ghost{
+    border-color: transparent;
+    color: var(--ink-dim);
+    margin-top: 4px;
+  }
+  button.action.ghost:hover:not(:disabled){
+    border-color: var(--panel-line);
+  }
+
+  #sectionHint, #baseHint{
+    font-size: 11.5px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+    margin: 8px 0 2px 0;
+  }
+  #sectionHint b{ color: var(--cut); font-weight: 500; }
+  #baseHint b{ color: var(--base); font-weight: 500; }
+
+  #hint{
+    margin-top:auto;
+    padding: 14px 18px 18px 18px;
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.6;
+    font-family: var(--mono);
+  }
+  #hint b{ color: var(--ink); font-weight:500; }
+
+  /* ---------- Viewport ---------- */
+  #viewport{
+    position:relative;
+    flex: 1;
+    height: 100%;
+  }
+  #canvasHolder{ width:100%; height:100%; }
+  #canvasHolder canvas{ display:block; cursor: grab; }
+  #canvasHolder canvas.grabbing{ cursor: grabbing; }
+  #canvasHolder canvas.crosshair{ cursor: crosshair; }
+  #canvasHolder canvas.move-plane{ cursor: move; }
+
+  #drawOverlay{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    pointer-events:none;
+    z-index: 3;
+  }
+  #drawOverlay line{
+    stroke: var(--cut);
+    stroke-width: 2;
+    stroke-dasharray: 6 4;
+  }
+  #drawOverlay circle{ fill: var(--cut); }
+
+  #emptyState{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column;
+    pointer-events:none;
+    text-align:center;
+  }
+  #emptyState .glyph{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    opacity: 0.55;
+  }
+  #emptyState .glyph b{ color: var(--accent-dim); }
+
+  #corner-tl, #corner-tr, #corner-br{
+    position:absolute;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.08em;
+    z-index: 4;
+    pointer-events:none;
+  }
+  #corner-tl{ top: 14px; left: 14px; }
+  #corner-tr{ top: 14px; right: 14px; text-align:right; }
+  #corner-tr.active{ color: var(--cut); }
+  #corner-tr.picking{ color: var(--base); }
+  #corner-br{ bottom: 14px; right: 14px; text-align:right; }
+
+  #axisIndicator{
+    position:absolute;
+    bottom: 16px; left: 16px;
+    width: 74px; height: 74px;
+    z-index: 4;
+    pointer-events:none;
+  }
+
+  #drawBanner{
+    position:absolute;
+    top: 14px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--accent-dim);
+    color: var(--cut);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    padding: 7px 14px;
+    border-radius: 3px;
+    z-index: 6;
+    pointer-events:none;
+    display:none;
+    white-space: nowrap;
+  }
+  #drawBanner.show{ display:block; }
+  #drawBanner.blue{ border-color: #2c5a80; color: var(--base); }
+
+  /* ---------- 2D cross-section mini window ---------- */
+  #crossSectionPanel{
+    position:absolute;
+    top: 44px; right: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    z-index: 7;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    user-select: none;
+  }
+  #crossSectionPanel.cs-hidden{ display:none; }
+  #csHeader{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--panel-line);
+    cursor: move;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+  }
+  #csHeader span.dot{
+    display:inline-block; width:6px; height:6px; border-radius:50%;
+    background: var(--cut); margin-right:6px;
+  }
+  #csDims{
+    font-family: var(--mono);
+    color: var(--ink);
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  #csCanvasWrap{
+    position: relative;
+    width: 224px;
+    height: 156px;
+    background:
+      linear-gradient(var(--panel-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--panel-line) 1px, transparent 1px);
+    background-size: 16px 16px;
+    background-color: rgba(0,0,0,0.15);
+    overflow: hidden;
+    cursor: ns-resize;
+  }
+  #crossSectionCanvas{
+    display:block;
+    width: 100%;
+    height: 100%;
+  }
+  #csCanvasWrap.measuring{ cursor: crosshair; }
+  #csEmptyMsg{
+    position:absolute; inset:0;
+    display:none;
+    align-items:center;
+    padding: 0 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    pointer-events:none;
+  }
+  #csErrorMsg{
+    position:absolute; inset:0;
+    display:none;
+    align-items:center;
+    padding: 0 14px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: #ff6b6b;
+    background: rgba(20,4,4,0.85);
+    pointer-events:none;
+  }
+  #csMeasureRow{
+    display:flex; align-items:center; gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--panel-line);
+  }
+  #btnCsMeasure{
+    background: transparent;
+    border: 1px solid var(--panel-line);
+    color: var(--ink-dim);
+    font-family: var(--sans);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #btnCsMeasure:hover{ border-color: var(--base); color: var(--base); }
+  #btnCsMeasure.active{
+    background: var(--base);
+    border-color: var(--base);
+    color: #061622;
+    font-weight: 600;
+  }
+  #csMeasureReadout{
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--base);
+    text-align: right;
+  }
+  #btnCsMeasureClear{
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    font-family: var(--sans);
+    font-size: 10.5px;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  #btnCsMeasureClear:hover{ color: var(--ink); }
+  #csScrollHint{
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    color: var(--ink-dim);
+    border-top: 1px solid var(--panel-line);
+    text-align: center;
+  }
+  #csScrollHint b{ color: var(--cut); font-weight: 500; }
+  #csResizeHandle{
+    position: absolute;
+    right: 2px; bottom: 2px;
+    width: 14px; height: 14px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg,
+      transparent 0 40%, var(--ink-dim) 40% 50%,
+      transparent 50% 60%, var(--ink-dim) 60% 70%,
+      transparent 70% 100%);
+    opacity: 0.55;
+  }
+  #csResizeHandle:hover{ opacity: 1; }
+
+  ::-webkit-scrollbar{ width: 8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--panel-line); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="panel">
+    <div id="brand">
+      <div class="mark">◱ Solid Body Inspector</div>
+      <h1>STL Viewer</h1>
+      <p>Load a mesh to inspect it in three dimensions.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Source Files</div>
+      <div id="dropzone">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
+          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+        </svg>
+        <div>Drop .stl files here<br>or click to browse — add as many as you like</div>
+      </div>
+      <input type="file" id="fileInput" accept=".stl" multiple>
+    </div>
+
+    <div class="section" id="modelsSection" style="display:none;">
+      <div class="section-label">Loaded Models <span id="modelSummary"></span></div>
+      <div id="modelList"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Display</div>
+      <div class="toggle-row">
+        <label for="tWire">Wireframe</label>
+        <div class="switch" id="tWire"></div>
+      </div>
+      <div class="toggle-row">
+        <label for="tGrid">Ground grid</label>
+        <div class="switch on" id="tGrid"></div>
+      </div>
+      <div class="toggle-row">
+        <label for="tSpin">Auto-rotate</label>
+        <div class="switch" id="tSpin"></div>
+      </div>
+      <div class="toggle-row">
+        <label for="tTheme">Light mode</label>
+        <div class="switch" id="tTheme"></div>
+      </div>
+      <button class="action" id="btnReset">Reset view</button>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Section Cut</div>
+      <button class="action primary" id="btnDrawSection" disabled>◈ Draw section line</button>
+      <div id="sectionHint">Draw a line across the model to slice it. The <b>outline</b> is traced live — both in 3D and in the 2D cross-section window — and you can drag the cut plane in the viewport to slide it through the model.</div>
+
+      <div id="sectionControls" style="display:none;">
+        <div class="toggle-row">
+          <label for="tClip">Clip solid</label>
+          <div class="switch" id="tClip"></div>
+        </div>
+        <button class="action ghost" id="btnFlipClip" style="display:none;">Flip clip side</button>
+        <div class="stat-row"><span>Outline segments</span><span id="statSegs">—</span></div>
+        <button class="action" id="btnClearSection">Clear section</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Reorient</div>
+      <button class="action primary blue" id="btnPickBase" disabled>⌗ Pick flat base</button>
+      <div id="baseHint">Click any face on the model and it becomes the <b>flat base</b> — the model rotates so that surface sits flush on the ground grid.</div>
+    </div>
+
+    <div id="hint">
+      <b>Drag</b> to orbit &nbsp; <b>Scroll</b> to zoom<br>
+      <b>Shift+Drag</b> or <b>Right-drag</b> to pan
+    </div>
+  </div>
+
+  <div id="viewport">
+    <div id="canvasHolder"></div>
+    <svg id="drawOverlay"></svg>
+    <div id="drawBanner"></div>
+
+    <div id="crossSectionPanel" class="cs-hidden">
+      <div id="csHeader"><span><span class="dot"></span>2D Cross Section</span><span id="csDims"></span></div>
+      <div id="csCanvasWrap">
+        <canvas id="crossSectionCanvas" width="224" height="156"></canvas>
+        <div id="csEmptyMsg">No intersection at this position</div>
+        <div id="csErrorMsg"></div>
+      </div>
+      <div id="csMeasureRow">
+        <button id="btnCsMeasure" title="Measure two points">📏 Measure</button>
+        <span id="csMeasureReadout"></span>
+        <button id="btnCsMeasureClear" title="Clear measurement" style="display:none;">Clear</button>
+      </div>
+      <div id="csScrollHint">Scroll here to <b>move the cut</b> through the model</div>
+      <div id="csResizeHandle" title="Drag to resize"></div>
+    </div>
+
+    <div id="emptyState"><div class="glyph">No mesh loaded — <b>load an STL file</b> to begin</div></div>
+    <div id="corner-tl">STL·VIEW</div>
+    <div id="corner-tr">PERSPECTIVE</div>
+    <div id="corner-br"></div>
+    <svg id="axisIndicator" viewBox="0 0 100 100"></svg>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  // ---------- Three.js setup ----------
+  const holder = document.getElementById('canvasHolder');
+  const scene = new THREE.Scene();
+  scene.background = null;
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.localClippingEnabled = true;
+  holder.appendChild(renderer.domElement);
+  const canvas = renderer.domElement;
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  scene.add(ambient);
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
+  key.position.set(1, 1.4, 1);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0x88aaff, 0.35);
+  fill.position.set(-1, 0.4, -1);
+  scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xff9d3d, 0.25);
+  rim.position.set(-0.5, -1, 0.8);
+  scene.add(rim);
+
+  // ---------- Theme (light/dark) ----------
+  const THEME_3D = {
+    dark:  { gridA: 0x3a4a42, gridB: 0x22302a, modelColor: 0xc9d4cc },
+    light: { gridA: 0xb7c2ba, gridB: 0xdde4de, modelColor: 0x6b7680 }
+  };
+  let currentTheme = 'dark';
+
+  let grid = new THREE.GridHelper(10, 10, THEME_3D.dark.gridA, THEME_3D.dark.gridB);
+  grid.visible = true;
+  scene.add(grid);
+
+  // GridHelper bakes its two colors into vertex colors at construction, so
+  // switching themes rebuilds it in place rather than trying to recolor it.
+  function rebuildGridForTheme(){
+    const t = THEME_3D[currentTheme];
+    const prevScale = grid.scale.clone();
+    const prevPos = grid.position.clone();
+    const prevVisible = grid.visible;
+    scene.remove(grid);
+    grid = new THREE.GridHelper(10, 10, t.gridA, t.gridB);
+    grid.scale.copy(prevScale);
+    grid.position.copy(prevPos);
+    grid.visible = prevVisible;
+    scene.add(grid);
+  }
+
+  function setTheme(theme){
+    currentTheme = theme;
+    document.body.classList.toggle('theme-light', theme === 'light');
+    document.getElementById('tTheme').classList.toggle('on', theme === 'light');
+    rebuildGridForTheme();
+    const modelColor = THEME_3D[currentTheme].modelColor;
+    models.forEach((m) => {
+      m.mesh.material.color.setHex(modelColor);
+      m.mesh.material.needsUpdate = true;
+    });
+  }
+
+  document.getElementById('tTheme').addEventListener('click', () => {
+    setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+  });
+
+  let models = [];        // { id, name, group, mesh, wireMesh, format, triCount, vertCount, size, opacity }
+  let modelIdCounter = 0;
+  let modelRadius = 5;    // derived from the combined bounding box of all loaded models
+
+  // ---------- Section-cut state ----------
+  let cutPlane = null;
+  let planeMesh = null;
+  let outlineLines = null;
+  let clipEnabled = false;
+  let clipFlipped = false;
+
+  let sectionArmed = false;
+  let isDrawingSection = false;
+  let drawStartClient = null;
+
+  let isDraggingPlane = false;
+  let planeDrag = null;
+
+  // ---------- Base-pick state ----------
+  let baseArmed = false;
+
+  const raycaster = new THREE.Raycaster();
+
+  // ---------- Manual orbit controls ----------
+  // Camera orientation is tracked as a quaternion built from continuous,
+  // incremental rotations — not recomputed each frame from absolute
+  // spherical angles. That's what makes 360° vertical orbiting flip-free:
+  // there's no fixed reference "up" to suddenly snap when passing a pole,
+  // because the up vector itself is just part of the same quaternion and
+  // rotates smoothly along with the view.
+  const target = new THREE.Vector3(0, 0, 0);
+  let radius = 12;
+  let orbitQuat = new THREE.Quaternion();
+  let autoRotate = false;
+
+  function quatForDefaultView(){
+    // Reproduces the original default framing (a fixed forward direction,
+    // no extra roll) as a quaternion, for initial load / reset view.
+    const theta = Math.PI * 0.28, phi = Math.PI * 0.35;
+    const dir = new THREE.Vector3(
+      Math.sin(phi) * Math.sin(theta),
+      Math.cos(phi),
+      Math.sin(phi) * Math.cos(theta)
+    );
+    return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  }
+  orbitQuat.copy(quatForDefaultView());
+
+  function updateCamera(){
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(orbitQuat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(orbitQuat);
+    camera.position.copy(target).addScaledVector(dir, radius);
+    camera.up.copy(up);
+    camera.lookAt(target);
+  }
+  updateCamera();
+
+  // Applies a drag as two incremental rotations around the camera's OWN
+  // current right/up axes (not fixed world axes) — this is what keeps
+  // dragging feeling consistent even upside-down, with no lock.
+  function orbitDrag(dx, dy){
+    const speed = 0.007;
+    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(orbitQuat);
+    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(orbitQuat);
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(localUp, -dx * speed);
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(localRight, -dy * speed);
+    orbitQuat.premultiply(qYaw).premultiply(qPitch).normalize();
+  }
+
+  let dragging = false;
+  let panning = false;
+  let lastX = 0, lastY = 0;
+
+  function clientToNDC(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+  }
+  function clientToLocal(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  canvas.addEventListener('mousedown', (e) => {
+    // 1) Picking a face to set as the flat base
+    if(baseArmed){
+      const ndc = clientToNDC(e.clientX, e.clientY);
+      raycaster.setFromCamera(ndc, camera);
+      const meshList = models.map(m => m.mesh);
+      const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
+      if(hit && hit.face){
+        const owner = models.find(m => m.mesh === hit.object);
+        if(owner) reorientToFace(owner, hit.face.normal);
+      }
+      setBaseArmed(false);
+      return;
+    }
+    // 2) Drawing a new section line
+    if(sectionArmed){
+      isDrawingSection = true;
+      drawStartClient = { x: e.clientX, y: e.clientY };
+      updateDrawOverlay(e.clientX, e.clientY, e.clientX, e.clientY);
+      return;
+    }
+    // 3) Dragging the existing cut plane
+    if(planeMesh){
+      const ndc = clientToNDC(e.clientX, e.clientY);
+      raycaster.setFromCamera(ndc, camera);
+      const hit = raycaster.intersectObject(planeMesh, false)[0];
+      if(hit){
+        isDraggingPlane = true;
+        const centerOnPlane = new THREE.Vector3();
+        cutPlane.projectPoint(new THREE.Vector3(0,0,0), centerOnPlane);
+        planeDrag = { origin: centerOnPlane, normal: cutPlane.normal.clone() };
+        canvas.classList.add('move-plane');
+        return;
+      }
+    }
+    // 4) Normal orbit / pan
+    dragging = true;
+    panning = (e.button === 2) || e.shiftKey;
+    lastX = e.clientX; lastY = e.clientY;
+    canvas.classList.add('grabbing');
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if(isDrawingSection){
+      finishDrawingSection(e.clientX, e.clientY);
+    }
+    dragging = false; panning = false;
+    isDraggingPlane = false; planeDrag = null;
+    canvas.classList.remove('grabbing');
+    canvas.classList.remove('move-plane');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if(isDrawingSection){
+      updateDrawOverlay(drawStartClient.x, drawStartClient.y, e.clientX, e.clientY);
+      return;
+    }
+    if(isDraggingPlane && planeDrag){
+      dragPlane(e.clientX, e.clientY);
+      return;
+    }
+    if(!dragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+
+    if(panning){
+      const panSpeed = radius * 0.0015;
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      const rightVec = new THREE.Vector3().crossVectors(camDir, camera.up).normalize();
+      const upReal = new THREE.Vector3().crossVectors(rightVec, camDir).normalize();
+      target.addScaledVector(rightVec, -dx * panSpeed);
+      target.addScaledVector(upReal, dy * panSpeed);
+    } else {
+      orbitDrag(dx, dy);
+    }
+    updateCamera();
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = Math.pow(0.999, -e.deltaY * (e.deltaMode === 1 ? 18 : 1));
+    radius = Math.max(modelRadius * 0.05, Math.min(modelRadius * 30, radius / factor));
+    updateCamera();
+    if(cutPlane && typeof updateCrossSectionView === 'function'){
+      updateCrossSectionView(lastCsSegArray); // keep the 2D view's zoom in sync with the 3D camera
+    }
+  }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape'){
+      if(sectionArmed){ setSectionArmed(false); isDrawingSection = false; hideDrawOverlay(); }
+      if(baseArmed){ setBaseArmed(false); }
+      if(typeof measurePoints !== 'undefined' && measurePoints.length){
+        measurePoints = [];
+        updateMeasureReadout();
+        if(typeof updateCrossSectionView === 'function') updateCrossSectionView(lastCsSegArray);
+      }
+    }
+  });
+
+  // touch support (single-finger orbit, two-finger pinch zoom)
+  let touchMode = null;
+  let touchStartDist = 0;
+  canvas.addEventListener('touchstart', (e) => {
+    if(e.touches.length === 1){
+      touchMode = 'orbit';
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+    } else if(e.touches.length === 2){
+      touchMode = 'pinch';
+      touchStartDist = dist(e.touches[0], e.touches[1]);
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if(touchMode === 'orbit' && e.touches.length === 1){
+      const dx = e.touches[0].clientX - lastX;
+      const dy = e.touches[0].clientY - lastY;
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+      orbitDrag(dx, dy);
+      updateCamera();
+    } else if(touchMode === 'pinch' && e.touches.length === 2){
+      const d = dist(e.touches[0], e.touches[1]);
+      const factor = d / touchStartDist;
+      touchStartDist = d;
+      radius = Math.max(modelRadius * 0.05, Math.min(modelRadius * 30, radius / factor));
+      updateCamera();
+      if(cutPlane && typeof updateCrossSectionView === 'function'){
+        updateCrossSectionView(lastCsSegArray);
+      }
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchend', () => { touchMode = null; });
+  function dist(a, b){
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+
+  // ---------- Resize ----------
+  function resize(){
+    const w = holder.clientWidth, h = holder.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    const overlay = document.getElementById('drawOverlay');
+    overlay.setAttribute('width', w);
+    overlay.setAttribute('height', h);
+    overlay.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- Axis indicator ----------
+  const axisSvg = document.getElementById('axisIndicator');
+  function drawAxisIndicator(){
+    const cx = 50, cy = 50, len = 32;
+    const dirs = [
+      { v: new THREE.Vector3(1,0,0), color: '#ff6b6b', label: 'X' },
+      { v: new THREE.Vector3(0,1,0), color: '#6bffa0', label: 'Y' },
+      { v: new THREE.Vector3(0,0,1), color: '#6bb8ff', label: 'Z' },
+    ];
+    const camDir = new THREE.Vector3(0, 0, 1).applyQuaternion(orbitQuat).normalize();
+    const up = camera.up.clone();
+    let right = new THREE.Vector3().crossVectors(up, camDir);
+    if(right.lengthSq() < 1e-6) right.set(1,0,0);
+    right.normalize();
+    const realUp = new THREE.Vector3().crossVectors(camDir, right).normalize();
+
+    let svg = `<circle cx="${cx}" cy="${cy}" r="2" fill="#3a4a42"/>`;
+    const items = dirs.map(d => {
+      const x = d.v.dot(right);
+      const y = -d.v.dot(realUp);
+      const z = d.v.dot(camDir);
+      return { x: cx + x*len, y: cy + y*len, z, color: d.color, label: d.label };
+    }).sort((a,b) => a.z - b.z);
+
+    items.forEach(it => {
+      const op = 0.45 + 0.55 * ((it.z + 1) / 2);
+      svg += `<line x1="${cx}" y1="${cy}" x2="${it.x}" y2="${it.y}" stroke="${it.color}" stroke-width="1.5" opacity="${op.toFixed(2)}"/>`;
+      svg += `<circle cx="${it.x}" cy="${it.y}" r="7" fill="${it.color}" opacity="${op.toFixed(2)}"/>`;
+      svg += `<text x="${it.x}" y="${it.y+3}" font-size="8" font-family="monospace" text-anchor="middle" fill="#0d1210">${it.label}</text>`;
+    });
+    axisSvg.innerHTML = svg;
+  }
+
+  // ---------- STL parsing ----------
+  function parseSTL(buffer){
+    const dv = new DataView(buffer);
+    const isBinaryBySize = (() => {
+      if(buffer.byteLength < 84) return false;
+      const triCount = dv.getUint32(80, true);
+      const expected = 84 + triCount * 50;
+      return expected === buffer.byteLength;
+    })();
+
+    if(isBinaryBySize){
+      return parseBinarySTL(dv);
+    } else {
+      const text = new TextDecoder('utf-8').decode(buffer);
+      return parseAsciiSTL(text);
+    }
+  }
+
+  function parseBinarySTL(dv){
+    const triCount = dv.getUint32(80, true);
+    const positions = new Float32Array(triCount * 9);
+    let offset = 84;
+    for(let i = 0; i < triCount; i++){
+      offset += 12; // skip stored normal
+      for(let v = 0; v < 3; v++){
+        positions[i*9 + v*3 + 0] = dv.getFloat32(offset, true); offset += 4;
+        positions[i*9 + v*3 + 1] = dv.getFloat32(offset, true); offset += 4;
+        positions[i*9 + v*3 + 2] = dv.getFloat32(offset, true); offset += 4;
+      }
+      offset += 2; // attribute byte count
+    }
+    return { positions, format: 'Binary' };
+  }
+
+  function parseAsciiSTL(text){
+    const positions = [];
+    const vertexRe = /vertex\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)/g;
+    let m;
+    while((m = vertexRe.exec(text)) !== null){
+      positions.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+    }
+    return { positions: new Float32Array(positions), format: 'ASCII' };
+  }
+
+  // ---------- Build a model from parsed STL, added to the collection ----------
+  function loadSTLData(buffer, fileName){
+    let parsed;
+    try {
+      parsed = parseSTL(buffer);
+    } catch(err){
+      alert('Could not parse "' + fileName + '" as STL: ' + err.message);
+      return;
+    }
+    if(!parsed.positions || parsed.positions.length < 9){
+      alert('No triangle data found in "' + fileName + '" — is this a valid STL file?');
+      return;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+
+    // Center this model's own geometry on its own local origin — every
+    // model keeps its own independent local space, and is positioned in
+    // the scene purely via its group's transform (see relayoutModels).
+    const bbox = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    geometry.computeBoundingBox();
+
+    const material = new THREE.MeshPhongMaterial({
+      color: THEME_3D[currentTheme].modelColor,
+      specular: 0x111111,
+      shininess: 18,
+      flatShading: true,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1,
+      clippingPlanes: []
+    });
+    const meshObj = new THREE.Mesh(geometry, material);
+
+    const wireGeo = geometry.clone();
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
+    });
+    const wireMeshObj = new THREE.Mesh(wireGeo, wireMat);
+    wireMeshObj.visible = wireOn;
+
+    const group = new THREE.Group();
+    group.add(meshObj);
+    group.add(wireMeshObj);
+    scene.add(group);
+
+    const model = {
+      id: ++modelIdCounter,
+      name: fileName,
+      group, mesh: meshObj, wireMesh: wireMeshObj,
+      format: parsed.format,
+      triCount: parsed.positions.length / 9,
+      vertCount: parsed.positions.length / 3,
+      size,
+      opacity: 100
+    };
+    models.push(model);
+
+    relayoutModels();
+    recomputeCombinedBounds();
+    frameCameraOnModels();
+    renderModelList();
+
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('btnDrawSection').disabled = false;
+    document.getElementById('btnPickBase').disabled = false;
+
+    if(cutPlane) refreshSection(); // fold the newly added model into the live section
+  }
+
+  // Lays every loaded model out side by side along X, each resting with
+  // its bottom on the shared floor at world Y = 0.
+  function relayoutModels(){
+    const gap = Math.max(modelRadius * 0.6, 1);
+    let nextX = 0;
+    models.forEach((m) => {
+      const halfW = m.size.x / 2;
+      m.group.position.set(nextX + halfW, m.size.y / 2, 0);
+      nextX += m.size.x + gap;
+    });
+  }
+
+  // Recomputes modelRadius + the shared grid from the union of every
+  // loaded model's world-space bounding box. Does not move the camera.
+  function recomputeCombinedBounds(){
+    if(models.length === 0){
+      modelRadius = 5;
+      grid.position.set(0, 0, 0);
+      grid.scale.setScalar(2.2);
+      return { min: new THREE.Vector3(-1,-1,-1), max: new THREE.Vector3(1,1,1) };
+    }
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    models.forEach((m) => {
+      const halfX = m.size.x / 2, halfY = m.size.y / 2, halfZ = m.size.z / 2;
+      const gx = m.group.position.x, gy = m.group.position.y, gz = m.group.position.z;
+      min.x = Math.min(min.x, gx - halfX); max.x = Math.max(max.x, gx + halfX);
+      min.y = Math.min(min.y, gy - halfY); max.y = Math.max(max.y, gy + halfY);
+      min.z = Math.min(min.z, gz - halfZ); max.z = Math.max(max.z, gz + halfZ);
+    });
+    const size = new THREE.Vector3().subVectors(max, min);
+    modelRadius = Math.max(size.x, size.y, size.z, 0.001) * 0.6;
+    grid.position.set((min.x + max.x) / 2, 0, (min.z + max.z) / 2);
+    grid.scale.setScalar(Math.max(modelRadius / 5, 0.1) * 2.2);
+    return { min, max };
+  }
+
+  function frameCameraOnModels(){
+    const { min, max } = recomputeCombinedBounds();
+    const center = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5);
+    target.copy(center);
+    radius = modelRadius * 3.2;
+    orbitQuat.copy(quatForDefaultView());
+    updateCamera();
+  }
+
+  function removeModel(id){
+    const idx = models.findIndex(m => m.id === id);
+    if(idx === -1) return;
+    const m = models[idx];
+    scene.remove(m.group);
+    m.mesh.geometry.dispose(); m.mesh.material.dispose();
+    m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
+    models.splice(idx, 1);
+
+    relayoutModels();
+    recomputeCombinedBounds();
+    renderModelList();
+
+    if(models.length === 0){
+      document.getElementById('emptyState').style.display = 'flex';
+      document.getElementById('btnDrawSection').disabled = true;
+      document.getElementById('btnPickBase').disabled = true;
+      clearSection();
+    } else if(cutPlane){
+      refreshSection();
+    }
+  }
+
+  function setModelOpacity(id, pct){
+    const m = models.find(m => m.id === id);
+    if(!m) return;
+    m.opacity = pct;
+    const a = pct / 100;
+    m.mesh.material.transparent = a < 1;
+    m.mesh.material.opacity = a;
+    m.mesh.material.needsUpdate = true;
+    m.wireMesh.material.opacity = 0.35 * a;
+    m.wireMesh.material.needsUpdate = true;
+  }
+
+  // ---------- Loaded-models list UI ----------
+  function renderModelList(){
+    const listEl = document.getElementById('modelList');
+    const summaryEl = document.getElementById('modelSummary');
+    if(models.length === 0){
+      listEl.innerHTML = '';
+      summaryEl.textContent = '';
+      document.getElementById('modelsSection').style.display = 'none';
+      return;
+    }
+    document.getElementById('modelsSection').style.display = 'block';
+    const totalTris = models.reduce((s, m) => s + m.triCount, 0);
+    summaryEl.textContent = `${models.length} model${models.length > 1 ? 's' : ''} · ${totalTris.toLocaleString()} triangles`;
+
+    listEl.innerHTML = models.map(m => `
+      <div class="model-row" data-id="${m.id}">
+        <div class="model-row-top">
+          <span class="model-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+          <button class="model-remove" data-id="${m.id}" title="Remove">×</button>
+        </div>
+        <div class="model-meta">${m.format} · ${m.triCount.toLocaleString()} tris · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}</div>
+        <div class="model-opacity-row">
+          <span class="model-opacity-label">Opacity</span>
+          <input type="range" class="model-opacity-slider" data-id="${m.id}" min="0" max="100" value="${m.opacity}">
+          <span class="model-opacity-value" data-id="${m.id}">${m.opacity}%</span>
+        </div>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.model-opacity-slider').forEach((slider) => {
+      slider.addEventListener('input', (e) => {
+        const id = Number(e.target.dataset.id);
+        const pct = Number(e.target.value);
+        setModelOpacity(id, pct);
+        const valueLabel = listEl.querySelector(`.model-opacity-value[data-id="${id}"]`);
+        if(valueLabel) valueLabel.textContent = pct + '%';
+      });
+    });
+    listEl.querySelectorAll('.model-remove').forEach((btn) => {
+      btn.addEventListener('click', () => removeModel(Number(btn.dataset.id)));
+    });
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ================= REORIENT: PICK FLAT BASE =================
+
+  function setBaseArmed(on){
+    baseArmed = on;
+    if(on) setSectionArmed(false);
+    const btn = document.getElementById('btnPickBase');
+    btn.classList.toggle('active', on);
+    btn.textContent = on ? '⌗ Click a face…' : '⌗ Pick flat base';
+    updateToolCursorAndBanner();
+  }
+
+  document.getElementById('btnPickBase').addEventListener('click', () => {
+    if(!models.length) return;
+    setBaseArmed(!baseArmed);
+  });
+
+  function reorientToFace(ownerModel, localFaceNormal){
+    const n = localFaceNormal.clone().normalize();
+    const down = new THREE.Vector3(0, -1, 0);
+    if(n.distanceToSquared(down) < 1e-6) return; // already the base
+
+    let quat;
+    if(n.distanceToSquared(down.clone().negate()) < 1e-6){
+      // exactly opposite of down — pick an arbitrary perpendicular axis to flip around
+      quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), Math.PI);
+    } else {
+      quat = new THREE.Quaternion().setFromUnitVectors(n, down);
+    }
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(quat);
+
+    ownerModel.mesh.geometry.applyMatrix4(m);
+    ownerModel.wireMesh.geometry.applyMatrix4(m);
+
+    ownerModel.mesh.geometry.computeBoundingBox();
+    const bbox = ownerModel.mesh.geometry.boundingBox;
+    const size = new THREE.Vector3(); bbox.getSize(size);
+    const center = new THREE.Vector3(); bbox.getCenter(center);
+
+    ownerModel.mesh.geometry.translate(-center.x, -center.y, -center.z);
+    ownerModel.wireMesh.geometry.translate(-center.x, -center.y, -center.z);
+    ownerModel.mesh.geometry.computeVertexNormals();
+    ownerModel.wireMesh.geometry.computeVertexNormals();
+    ownerModel.mesh.geometry.computeBoundingBox();
+
+    ownerModel.size = size;
+    // keep this model's X slot, just drop it back onto the shared floor
+    ownerModel.group.position.y = size.y / 2;
+
+    recomputeCombinedBounds();
+    renderModelList();
+    if(cutPlane) refreshSection(); // recompute against the new geometry; the plane itself is still valid
+  }
+
+  // ================= SECTION CUT TOOL =================
+
+  function setSectionArmed(on){
+    sectionArmed = on;
+    if(on) setBaseArmed(false);
+    const btn = document.getElementById('btnDrawSection');
+    btn.classList.toggle('active', on);
+    btn.textContent = on ? '◈ Click + drag on model…' : '◈ Draw section line';
+    updateToolCursorAndBanner();
+  }
+
+  function updateToolCursorAndBanner(){
+    const banner = document.getElementById('drawBanner');
+    canvas.classList.toggle('crosshair', sectionArmed || baseArmed);
+    banner.classList.toggle('blue', baseArmed);
+    if(sectionArmed){
+      banner.textContent = 'Click and drag across the model to define the cut';
+      banner.classList.add('show');
+    } else if(baseArmed){
+      banner.textContent = 'Click a face on the model to set it as the flat base';
+      banner.classList.add('show');
+    } else {
+      banner.classList.remove('show');
+    }
+  }
+
+  document.getElementById('btnDrawSection').addEventListener('click', () => {
+    if(!models.length) return;
+    setSectionArmed(!sectionArmed);
+    if(!sectionArmed){ hideDrawOverlay(); }
+  });
+
+  function updateDrawOverlay(x1, y1, x2, y2){
+    const p1 = clientToLocal(x1, y1);
+    const p2 = clientToLocal(x2, y2);
+    const overlay = document.getElementById('drawOverlay');
+    overlay.innerHTML = `
+      <line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/>
+      <circle cx="${p1.x}" cy="${p1.y}" r="4"/>
+      <circle cx="${p2.x}" cy="${p2.y}" r="4"/>
+    `;
+  }
+  function hideDrawOverlay(){
+    document.getElementById('drawOverlay').innerHTML = '';
+  }
+
+  // This is the single entry point that turns a drawn line into a live
+  // section: it sets the plane, then hands off to refreshSection(),
+  // which is the one function responsible for keeping the 3D outline, the
+  // clipping, and the 2D window all in sync from here on.
+  function finishDrawingSection(endClientX, endClientY){
+    isDrawingSection = false;
+    setSectionArmed(false);
+    hideDrawOverlay();
+    if(!models.length || !drawStartClient) return;
+
+    const startPx = clientToLocal(drawStartClient.x, drawStartClient.y);
+    const endPx = clientToLocal(endClientX, endClientY);
+    const screenDist = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y);
+    if(screenDist < 6) return;
+
+    const ndcA = clientToNDC(drawStartClient.x, drawStartClient.y);
+    const ndcB = clientToNDC(endClientX, endClientY);
+
+    raycaster.setFromCamera(ndcA, camera);
+    const dirA = raycaster.ray.direction.clone();
+    raycaster.setFromCamera(ndcB, camera);
+    const dirB = raycaster.ray.direction.clone();
+
+    const normal = new THREE.Vector3().crossVectors(dirA, dirB);
+    if(normal.lengthSq() < 1e-10) return;
+    normal.normalize();
+
+    cutPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, camera.position);
+    csZoomRef = null; // fresh cut gets a fresh auto-fit baseline
+
+    buildPlaneVisual();
+    document.getElementById('sectionControls').style.display = 'block';
+    document.getElementById('corner-tr').textContent = 'SECTION ACTIVE';
+    document.getElementById('corner-tr').classList.add('active');
+
+    refreshSection(); // computes the outline + clipping + 2D window together
+  }
+
+  function buildPlaneVisual(){
+    if(planeMesh){ scene.remove(planeMesh); planeMesh.geometry.dispose(); planeMesh.material.dispose(); }
+    const diam = Math.max(modelRadius * 3.4, 1);
+    const geo = new THREE.CircleGeometry(diam / 2, 56);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff9d3d, transparent: true, opacity: 0.14,
+      side: THREE.DoubleSide, depthWrite: false
+    });
+    planeMesh = new THREE.Mesh(geo, mat);
+    planeMesh.renderOrder = 400;
+    positionPlaneVisual();
+    scene.add(planeMesh);
+  }
+
+  function positionPlaneVisual(){
+    const centerOnPlane = new THREE.Vector3();
+    cutPlane.projectPoint(new THREE.Vector3(0,0,0), centerOnPlane);
+    planeMesh.position.copy(centerOnPlane);
+    planeMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), cutPlane.normal);
+  }
+
+  // Shifts the existing cut plane along its own normal by `dist` (in model
+  // units) and refreshes every dependent view. Shared by dragging the plane
+  // in the 3D viewport and scrolling inside the 2D window.
+  function moveCutPlaneAlongNormal(dist){
+    if(!cutPlane) return;
+    const centerOnPlane = new THREE.Vector3();
+    cutPlane.projectPoint(new THREE.Vector3(0,0,0), centerOnPlane);
+    centerOnPlane.addScaledVector(cutPlane.normal, dist);
+    cutPlane.setFromNormalAndCoplanarPoint(cutPlane.normal, centerOnPlane);
+    positionPlaneVisual();
+    refreshSection();
+  }
+
+  function dragPlane(clientX, clientY){
+    const ndc = clientToNDC(clientX, clientY);
+    raycaster.setFromCamera(ndc, camera);
+    const P1 = planeDrag.origin, d1 = planeDrag.normal;
+    const P2 = raycaster.ray.origin, d2 = raycaster.ray.direction;
+    const r = new THREE.Vector3().subVectors(P1, P2);
+    const a = d1.dot(d1), b = d1.dot(d2), c = d2.dot(d2);
+    const d = d1.dot(r), eScalar = d2.dot(r);
+    const denom = a * c - b * b;
+    if(Math.abs(denom) < 1e-8) return;
+    const t1 = (b * eScalar - c * d) / denom;
+    const newCenter = P1.clone().addScaledVector(d1, t1);
+    cutPlane.setFromNormalAndCoplanarPoint(d1, newCenter);
+    positionPlaneVisual();
+    refreshSection();
+  }
+
+  // Computes intersection segments for one model's geometry, in WORLD
+  // space (baking in that model's group offset — each group is a pure
+  // translation, no rotation/scale, so this is just an add per vertex).
+  function computeSectionOutlineForModel(positions, offset, plane){
+    const nx = plane.normal.x, ny = plane.normal.y, nz = plane.normal.z, k = plane.constant;
+    const ox = offset.x, oy = offset.y, oz = offset.z;
+    const segs = [];
+    for(let i = 0; i < positions.length; i += 9){
+      const ax=positions[i]+ox,   ay=positions[i+1]+oy, az=positions[i+2]+oz;
+      const bx=positions[i+3]+ox, by=positions[i+4]+oy, bz=positions[i+5]+oz;
+      const cx=positions[i+6]+ox, cy=positions[i+7]+oy, cz=positions[i+8]+oz;
+      const da = ax*nx + ay*ny + az*nz + k;
+      const db = bx*nx + by*ny + bz*nz + k;
+      const dc = cx*nx + cy*ny + cz*nz + k;
+      const ip = [];
+      if((da > 0) !== (db > 0)){
+        const t = da / (da - db);
+        ip.push(ax+(bx-ax)*t, ay+(by-ay)*t, az+(bz-az)*t);
+      }
+      if((db > 0) !== (dc > 0)){
+        const t = db / (db - dc);
+        ip.push(bx+(cx-bx)*t, by+(cy-by)*t, bz+(cz-bz)*t);
+      }
+      if((dc > 0) !== (da > 0)){
+        const t = dc / (dc - da);
+        ip.push(cx+(ax-cx)*t, cy+(ay-cy)*t, cz+(az-cz)*t);
+      }
+      if(ip.length === 6){ // two intersection points x/y/z each = 6 values
+        segs.push(ip[0],ip[1],ip[2], ip[3],ip[4],ip[5]);
+      }
+    }
+    return segs;
+  }
+
+  // Runs the intersection test against every loaded model and merges the
+  // results into one flat array of world-space segment points.
+  function computeSectionOutlineAll(plane){
+    let all = [];
+    models.forEach((m) => {
+      const positions = m.mesh.geometry.attributes.position.array;
+      all = all.concat(computeSectionOutlineForModel(positions, m.group.position, plane));
+    });
+    return new Float32Array(all);
+  }
+
+  // The one place that recomputes everything derived from `cutPlane`:
+  // the 3D outline, the clip planes, and the 2D window. Call this after
+  // any change to cutPlane's position or orientation, or to the set of
+  // loaded models.
+  function refreshSection(){
+    if(!models.length || !cutPlane) return;
+    const segArray = computeSectionOutlineAll(cutPlane);
+
+    if(!outlineLines){
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(segArray, 3));
+      const mat = new THREE.LineBasicMaterial({ color: 0xffe14d, depthTest: false, transparent: true });
+      outlineLines = new THREE.LineSegments(geo, mat);
+      outlineLines.renderOrder = 999;
+      scene.add(outlineLines);
+    } else {
+      outlineLines.geometry.dispose();
+      outlineLines.geometry = new THREE.BufferGeometry();
+      outlineLines.geometry.setAttribute('position', new THREE.BufferAttribute(segArray, 3));
+    }
+    document.getElementById('statSegs').textContent = (segArray.length / 6).toLocaleString();
+
+    updateClipping();
+    updateCrossSectionView(segArray);
+  }
+
+  function getClipPlane(){
+    if(!cutPlane) return null;
+    return clipFlipped
+      ? new THREE.Plane(cutPlane.normal.clone().negate(), -cutPlane.constant)
+      : cutPlane.clone();
+  }
+
+  // Three.js clipping planes are specified in world space and are applied
+  // by the renderer regardless of an object's own transform, so the same
+  // plane array works for every model without adjustment.
+  function updateClipping(){
+    const planes = (clipEnabled && cutPlane) ? [getClipPlane()] : [];
+    models.forEach((m) => {
+      m.mesh.material.clippingPlanes = planes; m.mesh.material.needsUpdate = true;
+      m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true;
+    });
+  }
+
+  function clearSection(){
+    if(planeMesh){ scene.remove(planeMesh); planeMesh.geometry.dispose(); planeMesh.material.dispose(); planeMesh = null; }
+    if(outlineLines){ scene.remove(outlineLines); outlineLines.geometry.dispose(); outlineLines.material.dispose(); outlineLines = null; }
+    cutPlane = null;
+    clipEnabled = false;
+    clipFlipped = false;
+    document.getElementById('tClip').classList.remove('on');
+    document.getElementById('btnFlipClip').style.display = 'none';
+    document.getElementById('sectionControls').style.display = 'none';
+    document.getElementById('corner-tr').textContent = 'PERSPECTIVE';
+    document.getElementById('corner-tr').classList.remove('active');
+    measurePoints = [];
+    csProjection = null;
+    csOutlineSegments = [];
+    csZoomRef = null;
+    if(typeof setMeasureArmed === 'function') setMeasureArmed(false);
+    if(typeof updateMeasureReadout === 'function') updateMeasureReadout();
+    hideCsPanel();
+    updateClipping();
+  }
+
+  document.getElementById('tClip').addEventListener('click', () => {
+    clipEnabled = !clipEnabled;
+    document.getElementById('tClip').classList.toggle('on', clipEnabled);
+    document.getElementById('btnFlipClip').style.display = clipEnabled ? 'block' : 'none';
+    updateClipping();
+  });
+  document.getElementById('btnFlipClip').addEventListener('click', () => {
+    clipFlipped = !clipFlipped;
+    updateClipping();
+  });
+  document.getElementById('btnClearSection').addEventListener('click', clearSection);
+
+  // ================= 2D CROSS-SECTION MINI WINDOW =================
+  // Plain 2D canvas drawing (moveTo/lineTo/stroke) — the simplest, most
+  // universally supported rendering path available, deliberately chosen
+  // over SVG-injection or a second WebGL context. Wrapped in try/catch so
+  // that if anything ever does go wrong, the panel shows the actual error
+  // message instead of silently staying blank.
+
+  const csPanel = document.getElementById('crossSectionPanel');
+  const csCanvas = document.getElementById('crossSectionCanvas');
+  const csCanvasWrap = document.getElementById('csCanvasWrap');
+  const csEmptyMsg = document.getElementById('csEmptyMsg');
+  const csErrorMsg = document.getElementById('csErrorMsg');
+  const csDimsLabel = document.getElementById('csDims');
+  const csCtx = csCanvas.getContext('2d');
+  const CS_PAD = 16;
+  const CS_MIN_W = 180, CS_MIN_H = 120, CS_MAX_W = 560, CS_MAX_H = 440;
+  let CS_W = csCanvas.width, CS_H = csCanvas.height;
+
+  // The mapping from world (u,v) coordinates on the cut plane to canvas
+  // pixels, captured each render so clicks can be converted back to real
+  // (millimeter) distances for the measure tool.
+  let csProjection = null;   // { u, v, minU, minV, scale }
+  let csOutlineSegments = []; // [{u1,v1,u2,v2}, ...] in world units, for snapping
+  let lastCsSegArray = null; // re-used to redraw after a resize
+  let csZoomRef = null;      // { scale, radius } — ties the 2D zoom to the 3D camera's zoom
+
+  function showCsPanel(){ csPanel.classList.remove('cs-hidden'); }
+  function hideCsPanel(){ csPanel.classList.add('cs-hidden'); }
+
+  function updateCrossSectionView(segArray){
+    lastCsSegArray = segArray;
+    showCsPanel();
+    csErrorMsg.style.display = 'none';
+    try{
+      csCtx.clearRect(0, 0, CS_W, CS_H);
+      // faint border so the panel's presence is obvious even if the
+      // outline itself is degenerate
+      csCtx.strokeStyle = 'rgba(217,227,220,0.12)';
+      csCtx.lineWidth = 1;
+      csCtx.strokeRect(0.5, 0.5, CS_W - 1, CS_H - 1);
+
+      if(!cutPlane || !segArray || segArray.length < 6){
+        csProjection = null;
+        csOutlineSegments = [];
+        csEmptyMsg.style.display = 'flex';
+        csDimsLabel.textContent = '';
+        drawMeasurement();
+        return;
+      }
+      csEmptyMsg.style.display = 'none';
+
+      const n = cutPlane.normal;
+      const upRef = Math.abs(n.y) < 0.98 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0);
+      const u = new THREE.Vector3().crossVectors(upRef, n).normalize();
+      const v = new THREE.Vector3().crossVectors(n, u).normalize();
+
+      const pointCount = segArray.length / 3;
+      const us = new Float32Array(pointCount);
+      const vs = new Float32Array(pointCount);
+      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+      for(let i = 0, p = 0; i < segArray.length; i += 3, p++){
+        const pu = segArray[i]*u.x + segArray[i+1]*u.y + segArray[i+2]*u.z;
+        const pv = segArray[i]*v.x + segArray[i+1]*v.y + segArray[i+2]*v.z;
+        us[p] = pu; vs[p] = pv;
+        if(pu < minU) minU = pu; if(pu > maxU) maxU = pu;
+        if(pv < minV) minV = pv; if(pv > maxV) maxV = pv;
+      }
+      const w = Math.max(maxU - minU, 1e-6);
+      const h = Math.max(maxV - minV, 1e-6);
+      const fitScale = Math.min((CS_W - 2*CS_PAD) / w, (CS_H - 2*CS_PAD) / h);
+      if(!csZoomRef){
+        // First time this section has a valid slice: lock in today's
+        // auto-fit scale against today's 3D camera distance. From here on,
+        // 2D zoom moves proportionally with 3D zoom instead of re-fitting.
+        csZoomRef = { scale: fitScale, radius };
+      }
+      const scale = csZoomRef.scale * (csZoomRef.radius / Math.max(radius, 1e-6));
+      const offX = (CS_W - w*scale) / 2;
+      const offY = (CS_H - h*scale) / 2;
+
+      // Store the mapping (offsets folded into minU/minV so the inverse
+      // used by the measure tool only needs u/v/minU/minV/scale).
+      csProjection = { u, v, minU: minU - offX/scale, minV: minV - offY/scale, scale };
+
+      csCtx.strokeStyle = '#ffe14d';
+      csCtx.lineWidth = 1.8;
+      csCtx.lineCap = 'round';
+      csCtx.beginPath();
+      csOutlineSegments = [];
+      for(let p = 0; p < pointCount; p += 2){
+        const x1 = offX + (us[p]   - minU) * scale;
+        const y1 = CS_H - (offY + (vs[p]   - minV) * scale);
+        const x2 = offX + (us[p+1] - minU) * scale;
+        const y2 = CS_H - (offY + (vs[p+1] - minV) * scale);
+        csCtx.moveTo(x1, y1);
+        csCtx.lineTo(x2, y2);
+        csOutlineSegments.push({ u1: us[p], v1: vs[p], u2: us[p+1], v2: vs[p+1] });
+      }
+      csCtx.stroke();
+
+      csDimsLabel.textContent = `${w.toFixed(2)} × ${h.toFixed(2)} mm`;
+      drawMeasurement();
+    } catch(err){
+      csErrorMsg.textContent = 'Cross-section render error: ' + (err && err.message ? err.message : err);
+      csErrorMsg.style.display = 'flex';
+      csEmptyMsg.style.display = 'none';
+      console.error('Cross-section render error:', err);
+    }
+  }
+
+  // Scroll inside the 2D window to slide the cut plane through the model.
+  csCanvasWrap.addEventListener('wheel', (e) => {
+    if(!cutPlane) return;
+    e.preventDefault();
+    const step = Math.max(modelRadius * 0.03, 0.001) * (e.deltaY > 0 ? 1 : -1);
+    moveCutPlaneAlongNormal(step);
+  }, { passive: false });
+
+  // ---------- Measure tool: two clicks in the 2D window, distance in mm ----------
+  let measureArmed = false;
+  let measurePoints = []; // up to 2: { u, v } — world units on the cut plane; pixel position is always derived fresh
+
+  function pixelToCanvasCoords(clientX, clientY){
+    const rect = csCanvas.getBoundingClientRect();
+    return {
+      px: (clientX - rect.left) * (csCanvas.width / rect.width),
+      py: (clientY - rect.top) * (csCanvas.height / rect.height)
+    };
+  }
+  function pixelToWorldUV(px, py){
+    if(!csProjection) return null;
+    const { minU, minV, scale } = csProjection;
+    return {
+      u: px / scale + minU,
+      v: (CS_H - py) / scale + minV
+    };
+  }
+  function worldUVToPixel(u, v){
+    const { minU, minV, scale } = csProjection;
+    return {
+      px: (u - minU) * scale,
+      py: CS_H - (v - minV) * scale
+    };
+  }
+  // Finds the closest point lying ON the drawn outline to a given world
+  // (u,v) position — this is what makes measurement points snap to the
+  // cross-section instead of floating anywhere in the window.
+  function findNearestOnOutline(u, v){
+    if(!csOutlineSegments.length) return null;
+    let best = null, bestDistSq = Infinity;
+    for(const seg of csOutlineSegments){
+      const dx = seg.u2 - seg.u1, dy = seg.v2 - seg.v1;
+      const lenSq = dx*dx + dy*dy;
+      let t = lenSq > 1e-12 ? ((u - seg.u1)*dx + (v - seg.v1)*dy) / lenSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      const cu = seg.u1 + t*dx, cv = seg.v1 + t*dy;
+      const distSq = (u-cu)*(u-cu) + (v-cv)*(v-cv);
+      if(distSq < bestDistSq){ bestDistSq = distSq; best = { u: cu, v: cv }; }
+    }
+    return best;
+  }
+
+  function setMeasureArmed(on){
+    measureArmed = on;
+    const btn = document.getElementById('btnCsMeasure');
+    btn.classList.toggle('active', on);
+    csCanvasWrap.classList.toggle('measuring', on);
+    if(!on && measurePoints.length){
+      // Turning the tool off clears whatever was measured, automatically —
+      // no need to separately hit "Clear" first.
+      measurePoints = [];
+      updateMeasureReadout();
+      updateCrossSectionView(lastCsSegArray);
+    }
+  }
+
+  document.getElementById('btnCsMeasure').addEventListener('click', () => {
+    setMeasureArmed(!measureArmed);
+  });
+  document.getElementById('btnCsMeasureClear').addEventListener('click', () => {
+    measurePoints = [];
+    updateMeasureReadout();
+    updateCrossSectionView(lastCsSegArray);
+  });
+
+  const CS_SNAP_MAX_PX = 28;   // ignore clicks this far from any outline
+  const CS_POINT_HIT_PX = 9;   // clicking this close to a placed point removes it
+
+  csCanvasWrap.addEventListener('click', (e) => {
+    if(!measureArmed || !csProjection) return;
+    const { px, py } = pixelToCanvasCoords(e.clientX, e.clientY);
+
+    // Clicking an existing point removes just that one point. Points are
+    // stored in world (u,v) units, so their on-screen position is always
+    // recomputed against the CURRENT zoom/pan before hit-testing — this is
+    // what keeps them glued to the outline as the view zooms.
+    const hitIdx = measurePoints.findIndex((p) => {
+      const pos = worldUVToPixel(p.u, p.v);
+      return Math.hypot(pos.px - px, pos.py - py) <= CS_POINT_HIT_PX;
+    });
+    if(hitIdx !== -1){
+      measurePoints.splice(hitIdx, 1);
+      updateMeasureReadout();
+      updateCrossSectionView(lastCsSegArray);
+      return;
+    }
+
+    // Otherwise, snap the click onto the nearest point of the drawn outline.
+    const approx = pixelToWorldUV(px, py);
+    if(!approx) return;
+    const snapped = findNearestOnOutline(approx.u, approx.v);
+    if(!snapped) return;
+    const snappedPx = worldUVToPixel(snapped.u, snapped.v);
+    if(Math.hypot(snappedPx.px - px, snappedPx.py - py) > CS_SNAP_MAX_PX) return; // too far from the line
+
+    if(measurePoints.length >= 2) measurePoints = [];
+    measurePoints.push({ u: snapped.u, v: snapped.v });
+    updateMeasureReadout();
+    updateCrossSectionView(lastCsSegArray);
+  });
+
+  function updateMeasureReadout(){
+    const readout = document.getElementById('csMeasureReadout');
+    const clearBtn = document.getElementById('btnCsMeasureClear');
+    if(measurePoints.length === 2){
+      const du = measurePoints[1].u - measurePoints[0].u;
+      const dv = measurePoints[1].v - measurePoints[0].v;
+      const dist = Math.sqrt(du*du + dv*dv);
+      readout.textContent = dist.toFixed(2) + ' mm';
+      clearBtn.style.display = 'inline';
+    } else {
+      readout.textContent = measureArmed ? 'Click two points…' : '';
+      clearBtn.style.display = measurePoints.length ? 'inline' : 'none';
+    }
+  }
+
+  // Draws the point markers + connecting line on top of whatever the last
+  // outline render left in the canvas. Called after every outline redraw
+  // (so measurement follows the cutter moving, the window resizing, and —
+  // the whole point here — the 3D camera zooming in or out) and after any
+  // click that changes the points. Positions are always derived fresh from
+  // each point's stored (u,v), never from a cached pixel location.
+  function drawMeasurement(){
+    if(measurePoints.length === 0 || !csProjection) return;
+    csCtx.save();
+    csCtx.fillStyle = '#6bb8ff';
+    csCtx.strokeStyle = '#6bb8ff';
+    const pts = measurePoints.map(p => worldUVToPixel(p.u, p.v));
+    pts.forEach((pos) => {
+      csCtx.beginPath();
+      csCtx.arc(pos.px, pos.py, 3.5, 0, Math.PI * 2);
+      csCtx.fill();
+    });
+    if(measurePoints.length === 2){
+      const [a, b] = pts;
+      csCtx.setLineDash([5, 4]);
+      csCtx.lineWidth = 1.4;
+      csCtx.beginPath();
+      csCtx.moveTo(a.px, a.py);
+      csCtx.lineTo(b.px, b.py);
+      csCtx.stroke();
+      csCtx.setLineDash([]);
+
+      const du = measurePoints[1].u - measurePoints[0].u;
+      const dv = measurePoints[1].v - measurePoints[0].v;
+      const dist = Math.sqrt(du*du + dv*dv);
+      const midX = (a.px + b.px) / 2, midY = (a.py + b.py) / 2;
+      const label = dist.toFixed(2) + ' mm';
+      csCtx.font = '11px "IBM Plex Mono", monospace';
+      const tw = csCtx.measureText(label).width;
+      csCtx.fillStyle = 'rgba(13,18,16,0.85)';
+      csCtx.fillRect(midX - tw/2 - 4, midY - 17, tw + 8, 15);
+      csCtx.fillStyle = '#6bb8ff';
+      csCtx.textAlign = 'center';
+      csCtx.fillText(label, midX, midY - 6);
+      csCtx.textAlign = 'left';
+    }
+    csCtx.restore();
+  }
+
+  // ---------- Resizing the mini window itself ----------
+  function resizeCsCanvas(w, h){
+    CS_W = Math.max(CS_MIN_W, Math.min(CS_MAX_W, Math.round(w)));
+    CS_H = Math.max(CS_MIN_H, Math.min(CS_MAX_H, Math.round(h)));
+    csCanvas.width = CS_W;
+    csCanvas.height = CS_H;
+    csCanvasWrap.style.width = CS_W + 'px';
+    csCanvasWrap.style.height = CS_H + 'px';
+    updateCrossSectionView(lastCsSegArray);
+  }
+
+  (function makeCsPanelResizable(){
+    const handle = document.getElementById('csResizeHandle');
+    let resizing = null;
+    handle.addEventListener('mousedown', (e) => {
+      resizing = { startX: e.clientX, startY: e.clientY, startW: CS_W, startH: CS_H };
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if(!resizing) return;
+      resizeCsCanvas(
+        resizing.startW + (e.clientX - resizing.startX),
+        resizing.startH + (e.clientY - resizing.startY)
+      );
+    });
+    window.addEventListener('mouseup', () => { resizing = null; });
+  })();
+
+  // draggable mini window (drag by its header)
+  (function makeCsPanelDraggable(){
+    const header = document.getElementById('csHeader');
+    let drag = null;
+    header.addEventListener('mousedown', (e) => {
+      const rect = csPanel.getBoundingClientRect();
+      drag = { offX: e.clientX - rect.left, offY: e.clientY - rect.top };
+      csPanel.style.right = 'auto';
+      csPanel.style.left = rect.left + 'px';
+      csPanel.style.top = rect.top + 'px';
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if(!drag) return;
+      const w = csPanel.offsetWidth, h = csPanel.offsetHeight;
+      let left = e.clientX - drag.offX;
+      let top = e.clientY - drag.offY;
+      left = Math.max(4, Math.min(window.innerWidth - w - 4, left));
+      top = Math.max(4, Math.min(window.innerHeight - h - 4, top));
+      csPanel.style.left = left + 'px';
+      csPanel.style.top = top + 'px';
+    });
+    window.addEventListener('mouseup', () => { drag = null; });
+  })();
+
+  // ================= /TOOLS =================
+
+  // ---------- UI wiring: file loading ----------
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    handleFiles(e.target.files);
+    fileInput.value = ''; // allow re-selecting the same file later
+  });
+  ['dragenter','dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('drag'); });
+  });
+  dropzone.addEventListener('drop', (e) => {
+    handleFiles(e.dataTransfer.files);
+  });
+
+  function handleFiles(fileList){
+    Array.from(fileList || []).forEach(handleFile);
+  }
+
+  function handleFile(file){
+    const reader = new FileReader();
+    reader.onload = (e) => loadSTLData(e.target.result, file.name);
+    reader.onerror = () => alert('Could not read "' + file.name + '".');
+    reader.readAsArrayBuffer(file);
+  }
+
+  let wireOn = false;
+  const tWire = document.getElementById('tWire');
+  tWire.addEventListener('click', () => {
+    wireOn = !wireOn;
+    tWire.classList.toggle('on', wireOn);
+    models.forEach(m => { m.wireMesh.visible = wireOn; });
+  });
+
+  let gridOn = true;
+  const tGrid = document.getElementById('tGrid');
+  tGrid.addEventListener('click', () => {
+    gridOn = !gridOn;
+    tGrid.classList.toggle('on', gridOn);
+    grid.visible = gridOn;
+  });
+
+  const tSpin = document.getElementById('tSpin');
+  tSpin.addEventListener('click', () => {
+    autoRotate = !autoRotate;
+    tSpin.classList.toggle('on', autoRotate);
+  });
+
+  document.getElementById('btnReset').addEventListener('click', () => {
+    frameCameraOnModels();
+  });
+
+  // ---------- Render loop ----------
+  let lastFrame = performance.now();
+  function animate(now){
+    requestAnimationFrame(animate);
+    const dt = (now - lastFrame) / 1000;
+    lastFrame = now;
+    if(autoRotate && !isDraggingPlane){
+      const qSpin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dt * 0.4);
+      orbitQuat.premultiply(qSpin).normalize();
+      updateCamera();
+    }
+    drawAxisIndicator();
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
