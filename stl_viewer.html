@@ -4,10 +4,6 @@
 <meta charset="UTF-8">
 <title>STL Viewer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 <style>
   :root{
     --bg: #0d1210;
@@ -66,6 +62,41 @@
     flex-direction:column;
     z-index: 5;
     overflow-y: auto;
+    overflow-x: hidden;
+    transition: width .25s ease, min-width .25s ease, border-color .25s ease;
+  }
+  #app.panel-collapsed #panel{
+    width: 0;
+    min-width: 0;
+    border-right-color: transparent;
+  }
+  #panelToggle{
+    position: absolute;
+    top: 50%;
+    left: 280px;
+    transform: translate(-50%, -50%);
+    width: 22px;
+    height: 44px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    color: var(--ink-dim);
+    cursor: pointer;
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-family: var(--sans);
+    padding: 0;
+    transition: left .25s ease, color .15s ease, border-color .15s ease;
+  }
+  #panelToggle:hover{
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+  #app.panel-collapsed #panelToggle{
+    left: 0px;
   }
   #brand{
     padding: 18px 18px 14px 18px;
@@ -182,7 +213,29 @@
     color: var(--ink-dim);
     margin-top: 3px;
   }
-  .model-color-tag{ color: var(--accent); }
+  .model-vcolor-tag{
+    color: var(--base);
+  }
+  .model-export-row{
+    display:flex; align-items:center; gap: 6px;
+    margin-top: 7px;
+  }
+  .model-export-btn{
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--panel-line);
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 4px 0;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: border-color .12s ease, color .12s ease;
+  }
+  .model-export-btn:hover{
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .model-opacity-row{
     display:flex; align-items:center; gap: 8px;
     margin-top: 7px;
@@ -225,6 +278,9 @@
     width: 34px;
     text-align: right;
     flex-shrink: 0;
+  }
+  #sModelColor{
+    background: linear-gradient(to right, #9aa0a6, #ffffff, #cbb994);
   }
 
   .toggle-row{
@@ -298,7 +354,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint{
+  #sectionHint, #baseHint, #threePointHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -306,6 +362,7 @@
   }
   #sectionHint b{ color: var(--cut); font-weight: 500; }
   #baseHint b{ color: var(--base); font-weight: 500; }
+  #threePointHint b{ color: var(--base); font-weight: 500; }
 
   #hint{
     margin-top:auto;
@@ -380,6 +437,44 @@
     width: 74px; height: 74px;
     z-index: 4;
     pointer-events:none;
+  }
+
+  #viewHex{
+    position:absolute;
+    bottom: 16px; right: 16px;
+    width: 108px; height: 108px;
+    z-index: 4;
+  }
+  #viewHex .hex-outline{
+    fill: none;
+    stroke: var(--panel-line);
+    stroke-width: 1.5;
+    pointer-events: none;
+  }
+  #viewHex .hex-wedge{
+    fill: var(--panel);
+    fill-opacity: 0.55;
+    stroke: var(--panel-line);
+    stroke-width: 0.75;
+    cursor: pointer;
+    transition: fill .12s ease, fill-opacity .12s ease;
+  }
+  #viewHex .hex-wedge:hover{
+    fill: var(--accent);
+    fill-opacity: 0.85;
+  }
+  #viewHex .hex-wedge:hover + .hex-label{
+    fill: #1a1208;
+    font-weight: 600;
+  }
+  #viewHex .hex-label{
+    font-family: var(--mono);
+    font-size: 11px;
+    fill: var(--ink-dim);
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+    user-select: none;
   }
 
   #drawBanner{
@@ -570,9 +665,9 @@
           <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
           <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
         </svg>
-        <div>Drop .stl, .obj, or .ply files here — for textured OBJs, drop the .mtl and image together<br>or click to browse — add as many as you like</div>
+        <div>Drop .stl, .obj, or .ply files here<br>or click to browse — add as many as you like</div>
       </div>
-      <input type="file" id="fileInput" accept=".stl,.obj,.ply,.mtl,.jpg,.jpeg,.png" multiple>
+      <input type="file" id="fileInput" accept=".stl,.obj,.ply" multiple>
     </div>
 
     <div class="section" id="modelsSection" style="display:none;">
@@ -588,7 +683,7 @@
       </div>
       <div class="toggle-row">
         <label for="tGrid">Ground grid</label>
-        <div class="switch on" id="tGrid"></div>
+        <div class="switch" id="tGrid"></div>
       </div>
       <div class="toggle-row">
         <label for="tSpin">Auto-rotate</label>
@@ -598,14 +693,30 @@
         <label for="tTheme">Light mode</label>
         <div class="switch" id="tTheme"></div>
       </div>
-      <div class="toggle-row">
-        <label for="tColor">Show color</label>
-        <div class="switch on" id="tColor"></div>
-      </div>
       <div class="model-opacity-row" style="margin-top:10px;">
         <span class="model-opacity-label">Brightness</span>
-        <input type="range" class="model-opacity-slider" id="sBrightness" min="20" max="150" value="100">
-        <span class="model-opacity-value" id="brightnessValue">100%</span>
+        <input type="range" class="model-opacity-slider" id="sBrightness" min="20" max="150" value="50">
+        <span class="model-opacity-value" id="brightnessValue">50%</span>
+      </div>
+      <div class="model-opacity-row" style="margin-top:8px;">
+        <span class="model-opacity-label">Gray</span>
+        <input type="range" class="model-opacity-slider" id="sModelColor" min="0" max="100" value="0">
+        <span class="model-opacity-label" style="text-align:right;">Beige</span>
+      </div>
+      <div class="model-opacity-row" style="margin-top:8px;">
+        <span class="model-opacity-label">Matte</span>
+        <input type="range" class="model-opacity-slider" id="sMatte" min="0" max="100" value="0">
+        <span class="model-opacity-value" id="matteValue">0%</span>
+      </div>
+      <div class="model-opacity-row" style="margin-top:6px;">
+        <span class="model-opacity-label">Shiny</span>
+        <input type="range" class="model-opacity-slider" id="sShiny" min="0" max="100" value="0">
+        <span class="model-opacity-value" id="shinyValue">0%</span>
+      </div>
+      <div class="model-opacity-row" style="margin-top:8px;">
+        <span class="model-opacity-label">FOV</span>
+        <input type="range" class="model-opacity-slider" id="sFov" min="15" max="100" value="15">
+        <span class="model-opacity-value" id="fovValue">15°</span>
       </div>
       <button class="action" id="btnReset">Reset view</button>
     </div>
@@ -630,6 +741,8 @@
       <div class="section-label">Reorient</div>
       <button class="action primary blue" id="btnPickBase" disabled>⌗ Pick flat base</button>
       <div id="baseHint">Click any face on the model and it becomes the <b>flat base</b> — the model rotates so that surface sits flush on the ground grid.</div>
+      <button class="action primary blue" id="btnPick3Point" disabled style="margin-top:8px;">△ Pick 3-point base</button>
+      <div id="threePointHint">Click <b>three points</b> on the model — the plane through them becomes the flat base.</div>
     </div>
 
     <div id="hint">
@@ -637,6 +750,8 @@
       <b>Shift+Drag</b> or <b>Right-drag</b> to pan
     </div>
   </div>
+
+  <button id="panelToggle" title="Collapse options">◀</button>
 
   <div id="viewport">
     <div id="canvasHolder"></div>
@@ -662,11 +777,27 @@
       <div class="cs-resize-handle" id="csResizeBR" title="Drag to resize"></div>
     </div>
 
-    <div id="emptyState"><div class="glyph">No mesh loaded — <b>load an STL file</b> to begin</div></div>
+    <div id="emptyState"><div class="glyph">No mesh loaded — <b>load an STL, OBJ, or PLY file</b> to begin</div></div>
     <div id="corner-tl">STL·VIEW</div>
     <div id="corner-tr">PERSPECTIVE</div>
     <div id="corner-br"></div>
     <svg id="axisIndicator" viewBox="0 0 100 100"></svg>
+
+    <svg id="viewHex" viewBox="0 0 120 120" title="Click a side to snap the view">
+      <path class="hex-wedge" data-view="front"  d="M60,60 L108,60 L84,18.4 Z"></path>
+      <text class="hex-label" x="82.3" y="47.1">FR</text>
+      <path class="hex-wedge" data-view="top"    d="M60,60 L84,18.4 L36,18.4 Z"></path>
+      <text class="hex-label" x="60" y="34.2">TP</text>
+      <path class="hex-wedge" data-view="left"   d="M60,60 L36,18.4 L12,60 Z"></path>
+      <text class="hex-label" x="37.7" y="47.1">LT</text>
+      <path class="hex-wedge" data-view="back"   d="M60,60 L12,60 L36,101.6 Z"></path>
+      <text class="hex-label" x="37.7" y="72.9">BK</text>
+      <path class="hex-wedge" data-view="bottom" d="M60,60 L36,101.6 L84,101.6 Z"></path>
+      <text class="hex-label" x="60" y="85.8">BM</text>
+      <path class="hex-wedge" data-view="right"  d="M60,60 L84,101.6 L108,60 Z"></path>
+      <text class="hex-label" x="82.3" y="72.9">RT</text>
+      <polygon class="hex-outline" points="108,60 84,18.4 36,18.4 12,60 36,101.6 84,101.6"></polygon>
+    </svg>
   </div>
 
 </div>
@@ -678,7 +809,7 @@
   const scene = new THREE.Scene();
   scene.background = null;
 
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
+  const camera = new THREE.PerspectiveCamera(15, 1, 0.01, 100000);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.localClippingEnabled = true;
@@ -689,20 +820,20 @@
   // rather than being tracked as separate state, so "100%" always means
   // exactly this original balance between the three lights.
   const BASE_LIGHT_INTENSITY = { ambient: 0.45, key: 1.05, fill: 0.25, rim: 0.18 };
-  let brightness = 1; // 0.2–1.5, set by the Brightness slider
+  let brightness = 0.5; // 0.2–1.5, set by the Brightness slider (defaults to 50%)
 
-  const ambient = new THREE.AmbientLight(0xffffff, BASE_LIGHT_INTENSITY.ambient);
+  const ambient = new THREE.AmbientLight(0xffffff, BASE_LIGHT_INTENSITY.ambient * brightness);
   scene.add(ambient);
   // Key/fill/rim lights are repositioned every frame in updateLightsToCamera()
   // below to follow the camera, so their initial positions here don't matter
   // much — they're immediately overwritten once orbiting starts.
-  const key = new THREE.DirectionalLight(0xffffff, BASE_LIGHT_INTENSITY.key);
+  const key = new THREE.DirectionalLight(0xffffff, BASE_LIGHT_INTENSITY.key * brightness);
   key.position.set(0.15, 1, 0.25);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0x88aaff, BASE_LIGHT_INTENSITY.fill);
+  const fill = new THREE.DirectionalLight(0x88aaff, BASE_LIGHT_INTENSITY.fill * brightness);
   fill.position.set(-0.6, 0.5, -0.4);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight(0xff9d3d, BASE_LIGHT_INTENSITY.rim);
+  const rim = new THREE.DirectionalLight(0xff9d3d, BASE_LIGHT_INTENSITY.rim * brightness);
   rim.position.set(-0.3, 0.8, -0.7);
   scene.add(rim);
 
@@ -714,15 +845,111 @@
     rim.intensity = BASE_LIGHT_INTENSITY.rim * factor;
   }
 
+  // ---------- Surface finish (normal ↔ matte / normal ↔ shiny) ----------
+  // Two independent-looking sliders that share one underlying "glossiness"
+  // value: raising Matte blends specular/shininess from normal toward a
+  // flat matte look; raising Shiny blends toward a bright, tight enamel-like
+  // highlight. They're mutually exclusive (a surface can't be both matte
+  // and glossy at once), so pushing one above zero resets the other back
+  // to zero, both in state and in the slider's own handle position.
+  const FINISH_NORMAL = { specular: 0x111111, shininess: 18  };
+  const FINISH_MATTE  = { specular: 0x0a0a0a, shininess: 3   };
+  const FINISH_SHINY  = { specular: 0xffffff, shininess: 130 };
+  let matteAmount = 0; // 0–100
+  let shinyAmount = 0; // 0–100
+
+  function computeFinish(){
+    const normalColor = new THREE.Color(FINISH_NORMAL.specular);
+    if(matteAmount > 0){
+      const t = matteAmount / 100;
+      return {
+        specular: normalColor.lerp(new THREE.Color(FINISH_MATTE.specular), t),
+        shininess: FINISH_NORMAL.shininess + (FINISH_MATTE.shininess - FINISH_NORMAL.shininess) * t
+      };
+    }
+    if(shinyAmount > 0){
+      const t = shinyAmount / 100;
+      return {
+        specular: normalColor.lerp(new THREE.Color(FINISH_SHINY.specular), t),
+        shininess: FINISH_NORMAL.shininess + (FINISH_SHINY.shininess - FINISH_NORMAL.shininess) * t
+      };
+    }
+    return { specular: normalColor, shininess: FINISH_NORMAL.shininess };
+  }
+
+  function applyFinishToModels(){
+    const f = computeFinish();
+    models.forEach((m) => {
+      m.mesh.material.specular.copy(f.specular);
+      m.mesh.material.shininess = f.shininess;
+      m.mesh.material.needsUpdate = true;
+    });
+  }
+
+  function setMatteAmount(pct){
+    matteAmount = pct;
+    if(pct > 0 && shinyAmount > 0){
+      shinyAmount = 0;
+      document.getElementById('sShiny').value = 0;
+      document.getElementById('shinyValue').textContent = '0%';
+    }
+    document.getElementById('matteValue').textContent = pct + '%';
+    applyFinishToModels();
+  }
+  function setShinyAmount(pct){
+    shinyAmount = pct;
+    if(pct > 0 && matteAmount > 0){
+      matteAmount = 0;
+      document.getElementById('sMatte').value = 0;
+      document.getElementById('matteValue').textContent = '0%';
+    }
+    document.getElementById('shinyValue').textContent = pct + '%';
+    applyFinishToModels();
+  }
+
+  document.getElementById('sMatte').addEventListener('input', (e) => {
+    setMatteAmount(Number(e.target.value));
+  });
+  document.getElementById('sShiny').addEventListener('input', (e) => {
+    setShinyAmount(Number(e.target.value));
+  });
+
+  // ---------- Model color (gray → white → beige) ----------
+  // Independent of light/dark theme. Two segments: 0–50 blends gray into
+  // white, 50–100 blends white into beige, so the middle of the slider
+  // lands on a clean white rather than a muddy gray/beige average.
+  const MODEL_COLOR_GRAY = 0x9aa0a6;
+  const MODEL_COLOR_WHITE = 0xffffff;
+  const MODEL_COLOR_BEIGE = 0xcbb994;
+  let modelColorMix = 0; // 0 = pure gray, 50 = white, 100 = pure beige
+
+  function computeModelColor(){
+    const t = modelColorMix / 100;
+    if(t <= 0.5){
+      return new THREE.Color(MODEL_COLOR_GRAY).lerp(new THREE.Color(MODEL_COLOR_WHITE), t / 0.5);
+    }
+    return new THREE.Color(MODEL_COLOR_WHITE).lerp(new THREE.Color(MODEL_COLOR_BEIGE), (t - 0.5) / 0.5);
+  }
+
+  function setModelColorMix(pct){
+    modelColorMix = pct;
+    const c = computeModelColor();
+    models.forEach((m) => {
+      if(m.hasVertexColors) return; // keep the file's own colors untinted
+      m.mesh.material.color.copy(c);
+      m.mesh.material.needsUpdate = true;
+    });
+  }
+
   // ---------- Theme (light/dark) ----------
   const THEME_3D = {
-    dark:  { gridA: 0x3a4a42, gridB: 0x22302a, modelColor: 0xc9d4cc },
-    light: { gridA: 0xb7c2ba, gridB: 0xdde4de, modelColor: 0x6b7680 }
+    dark:  { gridA: 0x3a4a42, gridB: 0x22302a },
+    light: { gridA: 0xb7c2ba, gridB: 0xdde4de }
   };
   let currentTheme = 'dark';
 
   let grid = new THREE.GridHelper(10, 10, THEME_3D.dark.gridA, THEME_3D.dark.gridB);
-  grid.visible = true;
+  grid.visible = false;
   scene.add(grid);
 
   // GridHelper bakes its two colors into vertex colors at construction, so
@@ -745,11 +972,6 @@
     document.body.classList.toggle('theme-light', theme === 'light');
     document.getElementById('tTheme').classList.toggle('on', theme === 'light');
     rebuildGridForTheme();
-    const modelColor = THEME_3D[currentTheme].modelColor;
-    models.forEach((m) => {
-      m.materialFlat.color.setHex(modelColor);
-      m.materialFlat.needsUpdate = true;
-    });
   }
 
   document.getElementById('tTheme').addEventListener('click', () => {
@@ -777,6 +999,11 @@
   // ---------- Base-pick state ----------
   let baseArmed = false;
 
+  // ---------- 3-point base-pick state ----------
+  let threePointArmed = false;
+  let threePointPicks = []; // { point: Vector3, model: modelRef }
+  let threePointMarkers = []; // visual THREE.Mesh dots for each pick
+
   const raycaster = new THREE.Raycaster();
 
   // ---------- Manual orbit controls ----------
@@ -791,18 +1018,66 @@
   let orbitQuat = new THREE.Quaternion();
   let autoRotate = false;
 
+  // Builds a camera-orientation quaternion that looks along `dir` with
+  // "up" kept as close to world-up as possible (the standard orbit-camera
+  // construction), rather than the minimal rotation from a base direction.
+  // This matters because the minimal-rotation approach only happens to keep
+  // the camera level for the 6 axis-aligned views — for any oblique angle
+  // (like the default 3/4 view) it introduces unwanted roll, which is what
+  // was making the flat ground grid appear tilted/diagonal on screen.
+  function buildLookQuaternion(dir){
+    const forward = dir.clone().normalize();
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    let right = new THREE.Vector3().crossVectors(worldUp, forward);
+    if(right.lengthSq() < 1e-8){
+      // dir is parallel to world-up (Top/Bottom view) — world-up alone
+      // can't define "right", so fall back to a fixed reference axis.
+      right.set(1, 0, 0);
+    }
+    right.normalize();
+    const up = new THREE.Vector3().crossVectors(forward, right).normalize();
+    const m = new THREE.Matrix4().makeBasis(right, up, forward);
+    return new THREE.Quaternion().setFromRotationMatrix(m);
+  }
+
   function quatForDefaultView(){
     // Reproduces the original default framing (a fixed forward direction,
-    // no extra roll) as a quaternion, for initial load / reset view.
+    // no roll) as a quaternion, for initial load / reset view.
     const theta = Math.PI * 0.28, phi = Math.PI * 0.35;
     const dir = new THREE.Vector3(
       Math.sin(phi) * Math.sin(theta),
       Math.cos(phi),
       Math.sin(phi) * Math.cos(theta)
     );
-    return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+    return buildLookQuaternion(dir);
   }
   orbitQuat.copy(quatForDefaultView());
+
+  // ---------- Hexagonal view selector (bottom-right) ----------
+  // Each side of the hexagon snaps the camera to one of the 6 canonical
+  // orthographic views, matching how the model sits in the scene — same
+  // technique as quatForDefaultView() above: build the quaternion that
+  // rotates the base forward direction (0,0,1) to point along the chosen
+  // axis, which also gives a clean, non-tilted "up" for every view.
+  const HEX_VIEW_DIRECTIONS = {
+    front:  new THREE.Vector3(0, 0, 1),
+    back:   new THREE.Vector3(0, 0, -1),
+    right:  new THREE.Vector3(1, 0, 0),
+    left:   new THREE.Vector3(-1, 0, 0),
+    top:    new THREE.Vector3(0, 1, 0),
+    bottom: new THREE.Vector3(0, -1, 0),
+  };
+
+  function snapToView(viewName){
+    const dir = HEX_VIEW_DIRECTIONS[viewName];
+    if(!dir) return;
+    orbitQuat.copy(buildLookQuaternion(dir));
+    updateCamera(); // keeps the current radius/target — only the angle snaps
+  }
+
+  document.querySelectorAll('#viewHex .hex-wedge').forEach((wedge) => {
+    wedge.addEventListener('click', () => snapToView(wedge.dataset.view));
+  });
 
   function updateCamera(){
     const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(orbitQuat);
@@ -873,11 +1148,26 @@
   canvas.addEventListener('contextmenu', e => e.preventDefault());
 
   canvas.addEventListener('mousedown', (e) => {
-    // 1) Picking a face to set as the flat base
-    if(baseArmed){
+    if(e.button === 1) e.preventDefault(); // stop the browser's native middle-click autoscroll
+    const isPrimaryClick = e.button === 0;
+
+    // 1) Picking 3 points to define a custom flat base
+    if(threePointArmed && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
-      const meshList = models.filter(m => !m.isPointCloud).map(m => m.mesh);
+      const meshList = models.map(m => m.mesh);
+      const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
+      if(hit){
+        const owner = models.find(m => m.mesh === hit.object);
+        if(owner) registerThreePointPick(hit.point.clone(), owner);
+      }
+      return;
+    }
+    // 2) Picking a face to set as the flat base
+    if(baseArmed && isPrimaryClick){
+      const ndc = clientToNDC(e.clientX, e.clientY);
+      raycaster.setFromCamera(ndc, camera);
+      const meshList = models.map(m => m.mesh);
       const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
       if(hit && hit.face){
         const owner = models.find(m => m.mesh === hit.object);
@@ -886,15 +1176,15 @@
       setBaseArmed(false);
       return;
     }
-    // 2) Drawing a new section line
-    if(sectionArmed){
+    // 3) Drawing a new section line
+    if(sectionArmed && isPrimaryClick){
       isDrawingSection = true;
       drawStartClient = { x: e.clientX, y: e.clientY };
       updateDrawOverlay(e.clientX, e.clientY, e.clientX, e.clientY);
       return;
     }
-    // 3) Dragging the existing cut plane
-    if(planeMesh){
+    // 4) Dragging the existing cut plane
+    if(planeMesh && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
       const hit = raycaster.intersectObject(planeMesh, false)[0];
@@ -907,7 +1197,10 @@
         return;
       }
     }
-    // 4) Normal orbit / pan
+    // 5) Normal orbit / pan — reached directly (bypassing every tool above)
+    // whenever the middle or right mouse button is used, so you can always
+    // reposition the view mid-task (e.g. scroll-wheel-press to orbit while
+    // picking the 3 base points) without first backing out of the tool.
     dragging = true;
     panning = (e.button === 2) || e.shiftKey;
     lastX = e.clientX; lastY = e.clientY;
@@ -966,6 +1259,7 @@
     if(e.key === 'Escape'){
       if(sectionArmed){ setSectionArmed(false); isDrawingSection = false; hideDrawOverlay(); }
       if(baseArmed){ setBaseArmed(false); }
+      if(threePointArmed){ setThreePointArmed(false); }
       if(typeof measurePoints !== 'undefined' && measurePoints.length){
         measurePoints = [];
         updateMeasureReadout();
@@ -1010,8 +1304,11 @@
   }
 
   // ---------- Resize ----------
+  let lastResizeW = -1, lastResizeH = -1;
   function resize(){
     const w = holder.clientWidth, h = holder.clientHeight;
+    if(w === lastResizeW && h === lastResizeH) return; // cheap to call every frame
+    lastResizeW = w; lastResizeH = h;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
@@ -1087,7 +1384,7 @@
       }
       offset += 2; // attribute byte count
     }
-    return { positions, format: 'Binary' };
+    return { positions, format: 'STL (Binary)' };
   }
 
   function parseAsciiSTL(text){
@@ -1097,61 +1394,423 @@
     while((m = vertexRe.exec(text)) !== null){
       positions.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
     }
-    return { positions: new Float32Array(positions), format: 'ASCII' };
+    return { positions: new Float32Array(positions), format: 'STL (ASCII)' };
   }
 
-  // ---------- Build a model from parsed STL, added to the collection ----------
-  function buildFlatMaterial(){
-    return new THREE.MeshPhongMaterial({
-      color: THEME_3D[currentTheme].modelColor,
-      specular: 0x111111,
-      shininess: 18,
+  // ---------- OBJ parsing ----------
+  // Only vertex positions and face indices are used — texture/normal
+  // indices (v/vt/vn), material directives, groups, etc. are all ignored,
+  // since normals get recomputed from the geometry anyway. Faces with more
+  // than 3 vertices (quads, ngons) are fan-triangulated from the first vertex.
+  function parseOBJ(text){
+    const vertices = [];
+    const positions = [];
+    const lines = text.split('\n');
+    for(let raw of lines){
+      const line = raw.trim();
+      if(!line || line[0] === '#') continue;
+      if(line[0] === 'v' && (line[1] === ' ' || line[1] === '\t')){
+        const parts = line.split(/\s+/);
+        vertices.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+      } else if(line[0] === 'f' && (line[1] === ' ' || line[1] === '\t')){
+        const parts = line.split(/\s+/).slice(1);
+        const vertCount = vertices.length / 3;
+        const idxs = parts.map((tok) => {
+          const vStr = tok.split('/')[0];
+          let idx = parseInt(vStr, 10);
+          idx = idx < 0 ? vertCount + idx : idx - 1; // OBJ indices are 1-based; negative = relative to end
+          return idx;
+        });
+        for(let i = 1; i < idxs.length - 1; i++){
+          const a = idxs[0], b = idxs[i], c = idxs[i + 1];
+          if(a < 0 || b < 0 || c < 0 || a >= vertCount || b >= vertCount || c >= vertCount) continue;
+          positions.push(vertices[a*3], vertices[a*3+1], vertices[a*3+2]);
+          positions.push(vertices[b*3], vertices[b*3+1], vertices[b*3+2]);
+          positions.push(vertices[c*3], vertices[c*3+1], vertices[c*3+2]);
+        }
+      }
+    }
+    return { positions: new Float32Array(positions), format: 'OBJ' };
+  }
+
+  // ---------- PLY parsing (ASCII and both binary endiannesses) ----------
+  const PLY_TYPE_SIZE = {
+    char:1, uchar:1, int8:1, uint8:1,
+    short:2, ushort:2, int16:2, uint16:2,
+    int:4, uint:4, int32:4, uint32:4,
+    float:4, float32:4,
+    double:8, float64:8
+  };
+  const PLY_INT_TYPES = new Set(['char','uchar','int8','uint8','short','ushort','int16','uint16','int','uint','int32','uint32']);
+  function normalizePlyColor(v, type){
+    // Integer color channels are 0–255; float channels are conventionally
+    // already 0–1. Either way, this gets it into the 0–1 range Three.js expects.
+    return PLY_INT_TYPES.has(type) ? v / 255 : v;
+  }
+
+  function findBytesSequence(bytes, needle, fromIndex){
+    const n = needle.length;
+    outer:
+    for(let i = fromIndex; i <= bytes.length - n; i++){
+      for(let j = 0; j < n; j++){
+        if(bytes[i + j] !== needle[j]) continue outer;
+      }
+      return i;
+    }
+    return -1;
+  }
+
+  function parsePLY(buffer){
+    const bytes = new Uint8Array(buffer);
+    const endHeaderBytes = Array.from('end_header').map(c => c.charCodeAt(0));
+    const headerEndIdx = findBytesSequence(bytes, endHeaderBytes, 0);
+    if(headerEndIdx === -1) throw new Error('no end_header found — not a valid PLY file');
+
+    let dataStart = headerEndIdx + endHeaderBytes.length;
+    if(bytes[dataStart] === 13) dataStart++; // \r
+    if(bytes[dataStart] === 10) dataStart++; // \n
+
+    const headerText = new TextDecoder('ascii').decode(bytes.subarray(0, headerEndIdx));
+    const headerLines = headerText.split('\n').map(l => l.trim()).filter(Boolean);
+
+    let format = 'ascii';
+    let currentElement = null;
+    const elements = [];
+    for(const line of headerLines){
+      const tokens = line.split(/\s+/);
+      if(tokens[0] === 'format'){
+        format = tokens[1];
+      } else if(tokens[0] === 'element'){
+        currentElement = { name: tokens[1], count: parseInt(tokens[2], 10), properties: [] };
+        elements.push(currentElement);
+      } else if(tokens[0] === 'property' && currentElement){
+        if(tokens[1] === 'list'){
+          currentElement.properties.push({ list: true, countType: tokens[2], indexType: tokens[3], name: tokens[4] });
+        } else {
+          currentElement.properties.push({ list: false, type: tokens[1], name: tokens[2] });
+        }
+      }
+    }
+
+    const vertexElement = elements.find(e => e.name === 'vertex');
+    const faceElement = elements.find(e => e.name === 'face');
+    if(!vertexElement) throw new Error('PLY file has no vertex element');
+
+    const xIdx = vertexElement.properties.findIndex(p => p.name === 'x');
+    const yIdx = vertexElement.properties.findIndex(p => p.name === 'y');
+    const zIdx = vertexElement.properties.findIndex(p => p.name === 'z');
+    if(xIdx === -1 || yIdx === -1 || zIdx === -1) throw new Error('PLY vertex element is missing x/y/z properties');
+
+    // Per-vertex color, if the file has it (common property names: red/green/blue, or r/g/b).
+    const rIdx = vertexElement.properties.findIndex(p => p.name === 'red' || p.name === 'r');
+    const gIdx = vertexElement.properties.findIndex(p => p.name === 'green' || p.name === 'g');
+    const bIdx = vertexElement.properties.findIndex(p => p.name === 'blue' || p.name === 'b');
+    const hasColor = rIdx !== -1 && gIdx !== -1 && bIdx !== -1;
+    const rType = hasColor ? vertexElement.properties[rIdx].type : null;
+    const gType = hasColor ? vertexElement.properties[gIdx].type : null;
+    const bType = hasColor ? vertexElement.properties[bIdx].type : null;
+
+    const vertexCount = vertexElement.count;
+    const vertices = new Float32Array(vertexCount * 3);
+    const vertColors = hasColor ? new Float32Array(vertexCount * 3) : null;
+    const positions = [];
+    const colorsOut = hasColor ? [] : null;
+
+    if(format === 'ascii'){
+      const dataText = new TextDecoder('utf-8').decode(bytes.subarray(dataStart));
+      const dataLines = dataText.split('\n');
+      let lineIdx = 0;
+      function nextLine(){
+        while(lineIdx < dataLines.length && dataLines[lineIdx].trim() === '') lineIdx++;
+        return dataLines[lineIdx++] || '';
+      }
+      for(let i = 0; i < vertexCount; i++){
+        const tokens = nextLine().trim().split(/\s+/).map(Number);
+        vertices[i*3] = tokens[xIdx]; vertices[i*3+1] = tokens[yIdx]; vertices[i*3+2] = tokens[zIdx];
+        if(hasColor){
+          vertColors[i*3]   = normalizePlyColor(tokens[rIdx], rType);
+          vertColors[i*3+1] = normalizePlyColor(tokens[gIdx], gType);
+          vertColors[i*3+2] = normalizePlyColor(tokens[bIdx], bType);
+        }
+      }
+      if(faceElement){
+        for(let i = 0; i < faceElement.count; i++){
+          const tokens = nextLine().trim().split(/\s+/).map(Number);
+          const n = tokens[0];
+          const idxs = tokens.slice(1, 1 + n);
+          for(let k = 1; k < n - 1; k++){
+            const a = idxs[0], b = idxs[k], c = idxs[k+1];
+            positions.push(vertices[a*3], vertices[a*3+1], vertices[a*3+2]);
+            positions.push(vertices[b*3], vertices[b*3+1], vertices[b*3+2]);
+            positions.push(vertices[c*3], vertices[c*3+1], vertices[c*3+2]);
+            if(hasColor){
+              colorsOut.push(vertColors[a*3], vertColors[a*3+1], vertColors[a*3+2]);
+              colorsOut.push(vertColors[b*3], vertColors[b*3+1], vertColors[b*3+2]);
+              colorsOut.push(vertColors[c*3], vertColors[c*3+1], vertColors[c*3+2]);
+            }
+          }
+        }
+      }
+      return {
+        positions: new Float32Array(positions),
+        colors: hasColor ? new Float32Array(colorsOut) : null,
+        format: 'PLY (ASCII)'
+      };
+    } else {
+      const littleEndian = format === 'binary_little_endian';
+      const dv = new DataView(buffer, dataStart);
+      let offset = 0;
+      function readScalar(type){
+        let v;
+        switch(type){
+          case 'char': case 'int8': v = dv.getInt8(offset); break;
+          case 'uchar': case 'uint8': v = dv.getUint8(offset); break;
+          case 'short': case 'int16': v = dv.getInt16(offset, littleEndian); break;
+          case 'ushort': case 'uint16': v = dv.getUint16(offset, littleEndian); break;
+          case 'int': case 'int32': v = dv.getInt32(offset, littleEndian); break;
+          case 'uint': case 'uint32': v = dv.getUint32(offset, littleEndian); break;
+          case 'float': case 'float32': v = dv.getFloat32(offset, littleEndian); break;
+          case 'double': case 'float64': v = dv.getFloat64(offset, littleEndian); break;
+          default: throw new Error('Unsupported PLY property type: ' + type);
+        }
+        offset += PLY_TYPE_SIZE[type];
+        return v;
+      }
+      for(let i = 0; i < vertexCount; i++){
+        let x = 0, y = 0, z = 0, r = 0, g = 0, b = 0;
+        vertexElement.properties.forEach((prop, pIdx) => {
+          const v = readScalar(prop.type);
+          if(pIdx === xIdx) x = v;
+          else if(pIdx === yIdx) y = v;
+          else if(pIdx === zIdx) z = v;
+          else if(hasColor && pIdx === rIdx) r = normalizePlyColor(v, rType);
+          else if(hasColor && pIdx === gIdx) g = normalizePlyColor(v, gType);
+          else if(hasColor && pIdx === bIdx) b = normalizePlyColor(v, bType);
+        });
+        vertices[i*3] = x; vertices[i*3+1] = y; vertices[i*3+2] = z;
+        if(hasColor){ vertColors[i*3] = r; vertColors[i*3+1] = g; vertColors[i*3+2] = b; }
+      }
+      if(faceElement){
+        const listProp = faceElement.properties.find(p => p.list);
+        for(let i = 0; i < faceElement.count; i++){
+          const n = readScalar(listProp.countType);
+          const idxs = [];
+          for(let k = 0; k < n; k++) idxs.push(readScalar(listProp.indexType));
+          for(let k = 1; k < n - 1; k++){
+            const a = idxs[0], b2 = idxs[k], c = idxs[k+1];
+            positions.push(vertices[a*3], vertices[a*3+1], vertices[a*3+2]);
+            positions.push(vertices[b2*3], vertices[b2*3+1], vertices[b2*3+2]);
+            positions.push(vertices[c*3], vertices[c*3+1], vertices[c*3+2]);
+            if(hasColor){
+              colorsOut.push(vertColors[a*3], vertColors[a*3+1], vertColors[a*3+2]);
+              colorsOut.push(vertColors[b2*3], vertColors[b2*3+1], vertColors[b2*3+2]);
+              colorsOut.push(vertColors[c*3], vertColors[c*3+1], vertColors[c*3+2]);
+            }
+          }
+        }
+      }
+      return {
+        positions: new Float32Array(positions),
+        colors: hasColor ? new Float32Array(colorsOut) : null,
+        format: 'PLY (Binary)'
+      };
+    }
+  }
+
+  // Picks a parser by file extension and returns { positions, format }.
+  function parseModelFile(buffer, fileName){
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    if(ext === 'obj'){
+      return parseOBJ(new TextDecoder('utf-8').decode(buffer));
+    }
+    if(ext === 'ply'){
+      return parsePLY(buffer);
+    }
+    return parseSTL(buffer); // default / .stl
+  }
+
+  // ================= EXPORT: STL / OBJ / PLY WRITERS =================
+  // All three write the geometry as a plain triangle soup (no vertex
+  // welding) — matching exactly how it's already held in memory, so export
+  // is a direct, lossless dump of the current geometry rather than a
+  // re-derived approximation.
+
+  function computeFaceNormal(ax,ay,az, bx,by,bz, cx,cy,cz){
+    const ux=bx-ax, uy=by-ay, uz=bz-az;
+    const vx=cx-ax, vy=cy-ay, vz=cz-az;
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const len = Math.hypot(nx,ny,nz) || 1;
+    return [nx/len, ny/len, nz/len];
+  }
+
+  function buildSTLBinary(positions){
+    const triCount = positions.length / 9;
+    const buffer = new ArrayBuffer(84 + triCount * 50);
+    const dv = new DataView(buffer);
+    const header = 'Exported from STL Viewer';
+    for(let i = 0; i < Math.min(header.length, 80); i++) dv.setUint8(i, header.charCodeAt(i));
+    dv.setUint32(80, triCount, true);
+    let offset = 84;
+    for(let t = 0; t < triCount; t++){
+      const i = t * 9;
+      const ax=positions[i],ay=positions[i+1],az=positions[i+2];
+      const bx=positions[i+3],by=positions[i+4],bz=positions[i+5];
+      const cx=positions[i+6],cy=positions[i+7],cz=positions[i+8];
+      const [nx,ny,nz] = computeFaceNormal(ax,ay,az, bx,by,bz, cx,cy,cz);
+      dv.setFloat32(offset,nx,true); offset+=4; dv.setFloat32(offset,ny,true); offset+=4; dv.setFloat32(offset,nz,true); offset+=4;
+      dv.setFloat32(offset,ax,true); offset+=4; dv.setFloat32(offset,ay,true); offset+=4; dv.setFloat32(offset,az,true); offset+=4;
+      dv.setFloat32(offset,bx,true); offset+=4; dv.setFloat32(offset,by,true); offset+=4; dv.setFloat32(offset,bz,true); offset+=4;
+      dv.setFloat32(offset,cx,true); offset+=4; dv.setFloat32(offset,cy,true); offset+=4; dv.setFloat32(offset,cz,true); offset+=4;
+      dv.setUint16(offset, 0, true); offset += 2;
+    }
+    return buffer;
+  }
+
+  function buildOBJText(positions){
+    const lines = [];
+    const triCount = positions.length / 9;
+    for(let t = 0; t < triCount; t++){
+      const i = t * 9;
+      for(let v = 0; v < 3; v++){
+        lines.push(`v ${positions[i+v*3]} ${positions[i+v*3+1]} ${positions[i+v*3+2]}`);
+      }
+    }
+    for(let t = 0; t < triCount; t++){
+      const base = t * 3 + 1; // OBJ indices are 1-based
+      lines.push(`f ${base} ${base+1} ${base+2}`);
+    }
+    return lines.join('\n') + '\n';
+  }
+
+  function buildPLYBinary(positions, colors){
+    const vertCount = positions.length / 3;
+    const triCount = positions.length / 9;
+    const hasColor = !!colors;
+    let header = 'ply\nformat binary_little_endian 1.0\n';
+    header += `element vertex ${vertCount}\n`;
+    header += 'property float x\nproperty float y\nproperty float z\n';
+    if(hasColor) header += 'property uchar red\nproperty uchar green\nproperty uchar blue\n';
+    header += `element face ${triCount}\n`;
+    header += 'property list uchar int vertex_indices\n';
+    header += 'end_header\n';
+    const headerBytes = new TextEncoder().encode(header);
+    const vertexStride = hasColor ? 15 : 12;
+    const totalSize = headerBytes.length + vertCount * vertexStride + triCount * (1 + 3*4);
+    const buffer = new ArrayBuffer(totalSize);
+    new Uint8Array(buffer).set(headerBytes, 0);
+    const dv = new DataView(buffer);
+    let offset = headerBytes.length;
+    for(let i = 0; i < vertCount; i++){
+      dv.setFloat32(offset, positions[i*3], true); offset += 4;
+      dv.setFloat32(offset, positions[i*3+1], true); offset += 4;
+      dv.setFloat32(offset, positions[i*3+2], true); offset += 4;
+      if(hasColor){
+        dv.setUint8(offset, Math.round(Math.min(1, Math.max(0, colors[i*3]))   * 255)); offset += 1;
+        dv.setUint8(offset, Math.round(Math.min(1, Math.max(0, colors[i*3+1])) * 255)); offset += 1;
+        dv.setUint8(offset, Math.round(Math.min(1, Math.max(0, colors[i*3+2])) * 255)); offset += 1;
+      }
+    }
+    for(let t = 0; t < triCount; t++){
+      dv.setUint8(offset, 3); offset += 1;
+      dv.setInt32(offset, t*3,   true); offset += 4;
+      dv.setInt32(offset, t*3+1, true); offset += 4;
+      dv.setInt32(offset, t*3+2, true); offset += 4;
+    }
+    return buffer;
+  }
+
+  function stripExtension(name){
+    const i = name.lastIndexOf('.');
+    return i > 0 ? name.slice(0, i) : name;
+  }
+
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Exports one loaded model's CURRENT geometry (after any reorientation,
+  // section-cut, etc. — clipping planes don't remove geometry, so the full
+  // shape is always exported regardless of what's visible) as the given format.
+  function exportModel(id, fmt){
+    const m = models.find(mm => mm.id === id);
+    if(!m) return;
+    const positions = m.mesh.geometry.attributes.position.array;
+    const colorAttr = m.mesh.geometry.attributes.color;
+    const baseName = stripExtension(m.name) || 'model';
+
+    if(fmt === 'stl'){
+      downloadBlob(new Blob([buildSTLBinary(positions)], { type: 'application/octet-stream' }), baseName + '.stl');
+    } else if(fmt === 'obj'){
+      downloadBlob(new Blob([buildOBJText(positions)], { type: 'text/plain' }), baseName + '.obj');
+    } else if(fmt === 'ply'){
+      const colors = colorAttr ? colorAttr.array : null;
+      downloadBlob(new Blob([buildPLYBinary(positions, colors)], { type: 'application/octet-stream' }), baseName + '.ply');
+    }
+  }
+
+  // ---------- Build a model from parsed geometry, added to the collection ----------
+  function loadModelData(buffer, fileName){
+    let parsed;
+    try {
+      parsed = parseModelFile(buffer, fileName);
+    } catch(err){
+      alert('Could not parse "' + fileName + '": ' + err.message);
+      return;
+    }
+    if(!parsed.positions || parsed.positions.length < 9){
+      alert('No triangle data found in "' + fileName + '" — is this a valid STL, OBJ, or PLY file?');
+      return;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
+    const hasVertexColors = !!parsed.colors;
+    if(hasVertexColors){
+      geometry.setAttribute('color', new THREE.BufferAttribute(parsed.colors, 3));
+    }
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+
+    // Center this model's own geometry on its own local origin — every
+    // model keeps its own independent local space, and is positioned in
+    // the scene purely via its group's transform (see relayoutModels).
+    const bbox = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    geometry.computeBoundingBox();
+
+    const initialFinish = computeFinish();
+    const material = new THREE.MeshPhongMaterial({
+      // With vertex colors, Three.js multiplies them by this base color —
+      // white leaves the file's own colors showing through accurately,
+      // instead of being tinted by the gray/beige slider.
+      color: hasVertexColors ? 0xffffff : computeModelColor(),
+      vertexColors: hasVertexColors,
+      specular: initialFinish.specular,
+      shininess: initialFinish.shininess,
       flatShading: true,
       side: THREE.DoubleSide,
       transparent: false,
       opacity: 1,
       clippingPlanes: []
     });
-  }
-
-  function buildWireMaterial(){
-    return new THREE.MeshBasicMaterial({
-      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
-    });
-  }
-
-  function colorModeLabel(m){
-    switch(m.colorMode){
-      case 'texture': return 'Textured';
-      case 'vertexColor': return 'Vertex color';
-      case 'material': return 'Material color';
-      default: return 'Flat';
-    }
-  }
-
-  function finalizeNewModel(model){
-    models.push(model);
-    relayoutModels();
-    recomputeCombinedBounds();
-    frameCameraOnModels();
-    renderModelList();
-
-    document.getElementById('emptyState').style.display = 'none';
-    document.getElementById('btnDrawSection').disabled = false;
-    document.getElementById('btnPickBase').disabled = false;
-
-    if(cutPlane) refreshSection();
-    return model;
-  }
-
-  function buildMeshModel(geometry, fileName, format, colorMode, colored, size, materialColorOverride){
-    const materialFlat = buildFlatMaterial();
-    const materialColor = colored ? (materialColorOverride || null) : null;
-
-    const meshObj = new THREE.Mesh(geometry, (colored && materialColor && showColor) ? materialColor : materialFlat);
+    const meshObj = new THREE.Mesh(geometry, material);
 
     const wireGeo = geometry.clone();
-    const wireMeshObj = new THREE.Mesh(wireGeo, buildWireMaterial());
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0xff9d3d, wireframe: true, transparent: true, opacity: 0.35, clippingPlanes: []
+    });
+    const wireMeshObj = new THREE.Mesh(wireGeo, wireMat);
     wireMeshObj.visible = wireOn;
 
     const group = new THREE.Group();
@@ -1163,363 +1822,42 @@
       id: ++modelIdCounter,
       name: fileName,
       group, mesh: meshObj, wireMesh: wireMeshObj,
-      isPointCloud: false,
-      format, colorMode, colored,
-      materialFlat, materialColor,
-      triCount: geometry.attributes.position.count / 3,
-      vertCount: geometry.attributes.position.count,
-      size, opacity: 100
+      format: parsed.format,
+      triCount: parsed.positions.length / 9,
+      vertCount: parsed.positions.length / 3,
+      size,
+      opacity: 100,
+      hasVertexColors
     };
-    return finalizeNewModel(model);
+    models.push(model);
+
+    // Auto-orient onto the largest flat face detected on the model, so it
+    // starts resting on its most natural base rather than however it
+    // happened to be authored in the STL file.
+    const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+    const bestNormal = findLargestFlatFaceNormal(meshObj.geometry.attributes.position.array, maxDim);
+    if(bestNormal) reorientToFace(model, bestNormal);
+
+    relayoutModels();
+    recomputeCombinedBounds();
+    frameCameraOnModels();
+    renderModelList();
+
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('btnDrawSection').disabled = false;
+    document.getElementById('btnPickBase').disabled = false;
+    document.getElementById('btnPick3Point').disabled = false;
+
+    if(cutPlane) refreshSection(); // fold the newly added model into the live section
   }
 
-  function buildPointCloudModel(geometry, fileName, format, colored, size){
-    const pointSize = Math.max(size.length() * 0.01, 0.005);
-    const materialFlat = new THREE.PointsMaterial({
-      color: THEME_3D[currentTheme].modelColor, size: pointSize
-    });
-    const materialColor = colored ? new THREE.PointsMaterial({ vertexColors: true, size: pointSize }) : null;
-
-    const pointsObj = new THREE.Points(geometry, (colored && materialColor && showColor) ? materialColor : materialFlat);
-
-    const group = new THREE.Group();
-    group.add(pointsObj);
-    scene.add(group);
-
-    const model = {
-      id: ++modelIdCounter,
-      name: fileName,
-      group, mesh: pointsObj, wireMesh: null,
-      isPointCloud: true,
-      format, colorMode: colored ? 'vertexColor' : 'flat', colored,
-      materialFlat, materialColor,
-      triCount: 0,
-      vertCount: geometry.attributes.position.count,
-      size, opacity: 100
-    };
-    return finalizeNewModel(model);
-  }
-
-  function loadSTLData(buffer, fileName){
-    let parsed;
-    try {
-      parsed = parseSTL(buffer);
-    } catch(err){
-      alert('Could not parse "' + fileName + '" as STL: ' + err.message);
-      return;
-    }
-    if(!parsed.positions || parsed.positions.length < 9){
-      alert('No triangle data found in "' + fileName + '" — is this a valid STL file?');
-      return;
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-
-    const bbox = geometry.boundingBox;
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    geometry.translate(-center.x, -center.y, -center.z);
-    geometry.computeBoundingBox();
-
-    buildMeshModel(geometry, fileName, parsed.format, 'flat', false, size);
-  }
-
-  function buildVertexColorMaterial(){
-    return new THREE.MeshPhongMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-      specular: 0x111111,
-      shininess: 18,
-      flatShading: true,
-      side: THREE.DoubleSide,
-      transparent: false,
-      opacity: 1,
-      clippingPlanes: []
-    });
-  }
-
-  function loadPLYData(buffer, fileName){
-    let geometry;
-    try {
-      geometry = new THREE.PLYLoader().parse(buffer);
-    } catch(err){
-      alert('Could not parse "' + fileName + '" as PLY: ' + err.message);
-      return;
-    }
-    if(!geometry.attributes.position || geometry.attributes.position.count < 1){
-      alert('No vertex data found in "' + fileName + '" — is this a valid PLY file?');
-      return;
-    }
-
-    const hasColor = !!geometry.attributes.color;
-    const isPointCloud = !geometry.index;
-
-    if(isPointCloud){
-      geometry.computeBoundingBox();
-      const bbox = geometry.boundingBox;
-      const size = new THREE.Vector3();
-      bbox.getSize(size);
-      const center = new THREE.Vector3();
-      bbox.getCenter(center);
-      geometry.translate(-center.x, -center.y, -center.z);
-      geometry.computeBoundingBox();
-      buildPointCloudModel(geometry, fileName, 'PLY', hasColor, size);
-      return;
-    }
-
-    const nonIndexed = geometry.toNonIndexed();
-    if(!nonIndexed.attributes.position || nonIndexed.attributes.position.count < 3){
-      alert('No triangle data found in "' + fileName + '" — is this a valid PLY file?');
-      return;
-    }
-    nonIndexed.computeBoundingBox();
-    const bbox = nonIndexed.boundingBox;
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    nonIndexed.translate(-center.x, -center.y, -center.z);
-    nonIndexed.computeVertexNormals();
-    nonIndexed.computeBoundingBox();
-
-    buildMeshModel(nonIndexed, fileName, 'PLY', hasColor ? 'vertexColor' : 'flat', hasColor, size, hasColor ? buildVertexColorMaterial() : undefined);
-  }
-
-  function loadOBJData(objText, fileName, companions){
-    const mtlMatch = objText.match(/^mtllib\s+(.+)$/m);
-    const mtlName = mtlMatch ? mtlMatch[1].trim().toLowerCase() : null;
-    const mtlFile = mtlName ? companions.get(mtlName) : null;
-
-    if(!mtlFile){
-      if(mtlName){
-        console.warn(`"${fileName}" references mtllib "${mtlName}" but no matching file was included in this batch — loading without material color.`);
-      }
-      finishOBJLoad(objText, fileName, null, companions);
-      return;
-    }
-
-    const mtlReader = new FileReader();
-    mtlReader.onerror = () => {
-      console.warn(`Could not read "${mtlFile.name}" — loading "${fileName}" without material color.`);
-      finishOBJLoad(objText, fileName, null, companions);
-    };
-    mtlReader.onload = (e) => finishOBJLoad(objText, fileName, e.target.result, companions);
-    mtlReader.readAsText(mtlFile);
-  }
-
-  function finishOBJLoad(objText, fileName, mtlText, companions){
-    const manager = new THREE.LoadingManager();
-    manager.setURLModifier((url) => {
-      const base = url.split('/').pop().toLowerCase();
-      const file = companions.get(base);
-      if(!file){
-        console.warn(`Texture "${url}" referenced by "${fileName}" was not found in this batch — using material color only.`);
-        return url;
-      }
-      return URL.createObjectURL(file);
-    });
-
-    let materials = null;
-    if(mtlText){
-      try {
-        const mtlLoader = new THREE.MTLLoader(manager);
-        materials = mtlLoader.parse(mtlText, '');
-        materials.preload();
-      } catch(err){
-        console.warn(`Could not parse material file for "${fileName}": ${err.message}`);
-        materials = null;
-      }
-    }
-
-    const objLoader = new THREE.OBJLoader(manager);
-    if(materials) objLoader.setMaterials(materials);
-
-    let group;
-    try {
-      group = objLoader.parse(objText);
-    } catch(err){
-      alert('Could not parse "' + fileName + '" as OBJ: ' + err.message);
-      return;
-    }
-
-    const meshChildren = [];
-    group.traverse((child) => { if(child.isMesh) meshChildren.push(child); });
-
-    if(meshChildren.length === 0){
-      loadOBJPointCloudFallback(objText, fileName);
-      return;
-    }
-
-    const isMultiMaterial = meshChildren.length > 1 ||
-      meshChildren.some((child) => Array.isArray(child.material) && child.material.length > 1);
-
-    if(!isMultiMaterial){
-      finalizeSingleMaterialOBJ(meshChildren[0], fileName);
-    } else {
-      finalizeMultiMaterialOBJ(meshChildren, fileName);
-    }
-  }
-
-  function finalizeSingleMaterialOBJ(child, fileName){
-    let geometry = child.geometry;
-    if(!geometry.attributes.position || geometry.attributes.position.count < 3){
-      alert('No triangle data found in "' + fileName + '" — is this a valid OBJ file?');
-      return;
-    }
-    if(geometry.index) geometry = geometry.toNonIndexed();
-
-    const hasVertexColor = !!geometry.attributes.color;
-    const srcMat = Array.isArray(child.material) ? child.material[0] : child.material;
-    const hasTexture = !!(srcMat && srcMat.map);
-    const hasFlatKd = !!(srcMat && srcMat.color && srcMat.color.getHex() !== 0xffffff);
-
-    geometry.computeBoundingBox();
-    const bbox = geometry.boundingBox;
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    geometry.translate(-center.x, -center.y, -center.z);
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-
-    let colorMode = 'flat';
-    let colored = false;
-    let materialColorOverride = null;
-
-    if(hasTexture){
-      colorMode = 'texture'; colored = true;
-      materialColorOverride = new THREE.MeshPhongMaterial({
-        color: srcMat.color ? srcMat.color.clone() : new THREE.Color(0xffffff),
-        map: srcMat.map,
-        specular: 0x111111, shininess: 18, flatShading: true,
-        side: THREE.DoubleSide, transparent: false, opacity: 1, clippingPlanes: []
-      });
-    } else if(hasVertexColor){
-      colorMode = 'vertexColor'; colored = true;
-      materialColorOverride = buildVertexColorMaterial();
-    } else if(hasFlatKd){
-      colorMode = 'material'; colored = true;
-      materialColorOverride = new THREE.MeshPhongMaterial({
-        color: srcMat.color.clone(),
-        specular: 0x111111, shininess: 18, flatShading: true,
-        side: THREE.DoubleSide, transparent: false, opacity: 1, clippingPlanes: []
-      });
-    }
-
-    buildMeshModel(geometry, fileName, 'OBJ', colorMode, colored, size, materialColorOverride);
-  }
-
-  function finalizeMultiMaterialOBJ(meshChildren, fileName){
-    const geometries = meshChildren.map((child) => {
-      let geo = child.geometry;
-      const materialsArr = Array.isArray(child.material) ? child.material : [child.material];
-
-      if(!geo.attributes.color){
-        const count = geo.attributes.position.count;
-        const colors = new Float32Array(count * 3);
-        const fallback = (materialsArr[0] && materialsArr[0].color) ? materialsArr[0].color : new THREE.Color(0xffffff);
-        for(let i = 0; i < count; i++){
-          colors[i * 3] = fallback.r; colors[i * 3 + 1] = fallback.g; colors[i * 3 + 2] = fallback.b;
-        }
-
-        const groups = (geo.groups && geo.groups.length)
-          ? geo.groups
-          : [{ start: 0, count: geo.index ? geo.index.count : count, materialIndex: 0 }];
-
-        groups.forEach((group) => {
-          const mat = materialsArr[group.materialIndex] || materialsArr[0];
-          const c = (mat && mat.color) ? mat.color : fallback;
-          if(geo.index){
-            for(let i = group.start; i < group.start + group.count; i++){
-              const vIdx = geo.index.array[i];
-              colors[vIdx * 3] = c.r; colors[vIdx * 3 + 1] = c.g; colors[vIdx * 3 + 2] = c.b;
-            }
-          } else {
-            for(let i = group.start; i < group.start + group.count; i++){
-              colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
-            }
-          }
-        });
-
-        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      }
-
-      if(geo.index) geo = geo.toNonIndexed();
-      geo.deleteAttribute('normal');
-      geo.deleteAttribute('uv');
-      return geo;
-    });
-
-    const merged = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries, false);
-    if(!merged || !merged.attributes.position || merged.attributes.position.count < 3){
-      alert('No triangle data found in "' + fileName + '" — is this a valid OBJ file?');
-      return;
-    }
-
-    merged.computeBoundingBox();
-    const bbox = merged.boundingBox;
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    merged.translate(-center.x, -center.y, -center.z);
-    merged.computeVertexNormals();
-    merged.computeBoundingBox();
-
-    buildMeshModel(merged, fileName, 'OBJ', 'material', true, size, buildVertexColorMaterial());
-  }
-
-  function loadOBJPointCloudFallback(objText, fileName){
-    const positions = [];
-    const colors = [];
-    let hasColor = false;
-    const vertexRe = /^v\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)(?:\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+))?/gm;
-    let m;
-    while((m = vertexRe.exec(objText)) !== null){
-      positions.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
-      if(m[4] !== undefined){
-        hasColor = true;
-        colors.push(parseFloat(m[4]), parseFloat(m[5]), parseFloat(m[6]));
-      } else {
-        colors.push(1, 1, 1);
-      }
-    }
-    if(positions.length < 3){
-      alert('No vertex data found in "' + fileName + '" — is this a valid OBJ file?');
-      return;
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-    if(hasColor) geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
-
-    geometry.computeBoundingBox();
-    const bbox = geometry.boundingBox;
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    geometry.translate(-center.x, -center.y, -center.z);
-    geometry.computeBoundingBox();
-
-    buildPointCloudModel(geometry, fileName, 'OBJ', hasColor, size);
-  }
-
-  // Lays every loaded model out side by side along X, each resting with
-  // its bottom on the shared floor at world Y = 0.
+  // Every model shares the same X/Z spot at the origin — only its own
+  // height determines how far it sits above the floor. Loading the same
+  // (or a different) STL more than once means they overlap in place,
+  // rather than being automatically spread out into separate slots.
   function relayoutModels(){
-    const gap = Math.max(modelRadius * 0.6, 1);
-    let nextX = 0;
     models.forEach((m) => {
-      const halfW = m.size.x / 2;
-      m.group.position.set(nextX + halfW, m.size.y / 2, 0);
-      nextX += m.size.x + gap;
+      m.group.position.set(0, m.size.y / 2, 0);
     });
   }
 
@@ -1543,7 +1881,10 @@
     });
     const size = new THREE.Vector3().subVectors(max, min);
     modelRadius = Math.max(size.x, size.y, size.z, 0.001) * 0.6;
-    grid.position.set((min.x + max.x) / 2, 0, (min.z + max.z) / 2);
+    // Flat floor sitting right under the model, at its lowest point — this
+    // stays true regardless of which angle the camera is viewing from,
+    // including the default Bottom (BM) view.
+    grid.position.set((min.x + max.x) / 2, min.y, (min.z + max.z) / 2);
     grid.scale.setScalar(Math.max(modelRadius / 5, 0.1) * 2.2);
     return { min, max };
   }
@@ -1552,8 +1893,14 @@
     const { min, max } = recomputeCombinedBounds();
     const center = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5);
     target.copy(center);
-    radius = modelRadius * 3.2;
-    orbitQuat.copy(quatForDefaultView());
+    // Framing distance scales with FOV (via tan(fov/2)) so the model reads
+    // the same size on screen regardless of the current field of view —
+    // calibrated so it reproduces the original modelRadius*3.2 framing at
+    // the app's old 45° reference FOV.
+    const FRAMING_K = 1.3255; // = 3.2 * tan(22.5°)
+    radius = (modelRadius * FRAMING_K) / Math.tan((camera.fov * Math.PI / 180) / 2);
+    // Default view is now "Bottom" (BM) rather than the old 3/4 angle.
+    orbitQuat.copy(buildLookQuaternion(HEX_VIEW_DIRECTIONS.bottom));
     updateCamera();
   }
 
@@ -1562,10 +1909,8 @@
     if(idx === -1) return;
     const m = models[idx];
     scene.remove(m.group);
-    m.mesh.geometry.dispose();
-    m.materialFlat.dispose();
-    if(m.materialColor) m.materialColor.dispose();
-    if(m.wireMesh){ m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose(); }
+    m.mesh.geometry.dispose(); m.mesh.material.dispose();
+    m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
     models.splice(idx, 1);
 
     relayoutModels();
@@ -1576,6 +1921,8 @@
       document.getElementById('emptyState').style.display = 'flex';
       document.getElementById('btnDrawSection').disabled = true;
       document.getElementById('btnPickBase').disabled = true;
+      document.getElementById('btnPick3Point').disabled = true;
+      setThreePointArmed(false);
       clearSection();
     } else if(cutPlane){
       refreshSection();
@@ -1587,16 +1934,11 @@
     if(!m) return;
     m.opacity = pct;
     const a = pct / 100;
-    [m.materialFlat, m.materialColor].forEach((mat) => {
-      if(!mat) return;
-      mat.transparent = a < 1;
-      mat.opacity = a;
-      mat.needsUpdate = true;
-    });
-    if(m.wireMesh){
-      m.wireMesh.material.opacity = 0.35 * a;
-      m.wireMesh.material.needsUpdate = true;
-    }
+    m.mesh.material.transparent = a < 1;
+    m.mesh.material.opacity = a;
+    m.mesh.material.needsUpdate = true;
+    m.wireMesh.material.opacity = 0.35 * a;
+    m.wireMesh.material.needsUpdate = true;
   }
 
   // ---------- Loaded-models list UI ----------
@@ -1619,11 +1961,17 @@
           <span class="model-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
           <button class="model-remove" data-id="${m.id}" title="Remove">×</button>
         </div>
-        <div class="model-meta">${m.format} · <span class="model-color-tag">${colorModeLabel(m)}</span> · ${m.isPointCloud ? m.vertCount.toLocaleString() + ' pts' : m.triCount.toLocaleString() + ' tris'} · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}</div>
+        <div class="model-meta">${m.format} · ${m.triCount.toLocaleString()} tris · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}${m.hasVertexColors ? ' · <span class="model-vcolor-tag">●&nbsp;vertex colors</span>' : ''}</div>
         <div class="model-opacity-row">
           <span class="model-opacity-label">Opacity</span>
           <input type="range" class="model-opacity-slider" data-id="${m.id}" min="0" max="100" value="${m.opacity}">
           <span class="model-opacity-value" data-id="${m.id}">${m.opacity}%</span>
+        </div>
+        <div class="model-export-row">
+          <span class="model-opacity-label">Export</span>
+          <button class="model-export-btn" data-id="${m.id}" data-fmt="stl">STL</button>
+          <button class="model-export-btn" data-id="${m.id}" data-fmt="obj">OBJ</button>
+          <button class="model-export-btn" data-id="${m.id}" data-fmt="ply">PLY</button>
         </div>
       </div>
     `).join('');
@@ -1640,6 +1988,9 @@
     listEl.querySelectorAll('.model-remove').forEach((btn) => {
       btn.addEventListener('click', () => removeModel(Number(btn.dataset.id)));
     });
+    listEl.querySelectorAll('.model-export-btn').forEach((btn) => {
+      btn.addEventListener('click', () => exportModel(Number(btn.dataset.id), btn.dataset.fmt));
+    });
   }
 
   function escapeHtml(str){
@@ -1650,9 +2001,59 @@
 
   // ================= REORIENT: PICK FLAT BASE =================
 
+  // Finds the model's largest contiguous flat surface: groups triangles by
+  // (direction, plane) — not just direction alone, so two parallel but
+  // separate plateaus on a stepped part aren't lumped together as one big
+  // "face" — and returns the normal of whichever group has the most total
+  // surface area. That's the face most STL/slicer tools would also pick as
+  // the natural resting base: the largest, flattest surface on the part.
+  function findLargestFlatFaceNormal(positions, maxDim){
+    const buckets = new Map();
+    // Plane-offset tolerance scales with the model's size so this works
+    // the same way whether the STL is in millimeters or meters; the
+    // direction tolerance doesn't need scaling since normals are unit length.
+    const planeTolerance = Math.max(maxDim * 0.001, 1e-6);
+
+    for(let i = 0; i < positions.length; i += 9){
+      const ax=positions[i],   ay=positions[i+1], az=positions[i+2];
+      const bx=positions[i+3], by=positions[i+4], bz=positions[i+5];
+      const cx=positions[i+6], cy=positions[i+7], cz=positions[i+8];
+
+      const ux = bx-ax, uy = by-ay, uz = bz-az;
+      const vx = cx-ax, vy = cy-ay, vz = cz-az;
+      let nx = uy*vz - uz*vy;
+      let ny = uz*vx - ux*vz;
+      let nz = ux*vy - uy*vx;
+      const len = Math.hypot(nx, ny, nz);
+      if(len < 1e-12) continue; // degenerate/zero-area triangle
+      const area = len / 2;
+      nx /= len; ny /= len; nz /= len;
+
+      const d = nx*ax + ny*ay + nz*az; // plane offset along this normal
+      const key = Math.round(nx*1000) + ',' + Math.round(ny*1000) + ',' +
+                  Math.round(nz*1000) + ',' + Math.round(d / planeTolerance);
+
+      let b = buckets.get(key);
+      if(!b){ b = { area: 0, nx: 0, ny: 0, nz: 0 }; buckets.set(key, b); }
+      b.area += area;
+      // Area-weighted running average of the normal, for a touch more
+      // precision than just taking one triangle's normal for the group.
+      b.nx += nx * area; b.ny += ny * area; b.nz += nz * area;
+    }
+
+    let best = null;
+    for(const b of buckets.values()){
+      if(!best || b.area > best.area) best = b;
+    }
+    if(!best) return null;
+    const len = Math.hypot(best.nx, best.ny, best.nz);
+    if(len < 1e-9) return null;
+    return new THREE.Vector3(best.nx/len, best.ny/len, best.nz/len);
+  }
+
   function setBaseArmed(on){
     baseArmed = on;
-    if(on) setSectionArmed(false);
+    if(on){ setSectionArmed(false); setThreePointArmed(false); }
     const btn = document.getElementById('btnPickBase');
     btn.classList.toggle('active', on);
     btn.textContent = on ? '⌗ Click a face…' : '⌗ Pick flat base';
@@ -1701,11 +2102,87 @@
     if(cutPlane) refreshSection(); // recompute against the new geometry; the plane itself is still valid
   }
 
+  // ================= 3-POINT BASE PICK =================
+  // Same underlying reorientToFace() as the single-click tool above, but
+  // the normal comes from a plane fitted through 3 clicked points instead
+  // of a single triangle's face normal — useful when the surface you want
+  // as the base isn't a single flat face.
+
+  function setThreePointArmed(on){
+    threePointArmed = on;
+    if(on){ setBaseArmed(false); setSectionArmed(false); }
+    if(!on) clearThreePointPicks();
+    const btn = document.getElementById('btnPick3Point');
+    btn.classList.toggle('active', on);
+    updateThreePointButtonLabel();
+    updateToolCursorAndBanner();
+  }
+
+  function updateThreePointButtonLabel(){
+    const btn = document.getElementById('btnPick3Point');
+    if(!threePointArmed){ btn.textContent = '△ Pick 3-point base'; return; }
+    const n = threePointPicks.length;
+    btn.textContent = n === 0 ? '△ Click point 1 of 3…'
+      : n === 1 ? '△ Click point 2 of 3…'
+      : '△ Click point 3 of 3…';
+  }
+
+  document.getElementById('btnPick3Point').addEventListener('click', () => {
+    if(!models.length) return;
+    setThreePointArmed(!threePointArmed);
+  });
+
+  function addThreePointMarker(point){
+    const geo = new THREE.SphereGeometry(Math.max(modelRadius * 0.02, 0.02), 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x6bb8ff, depthTest: false, transparent: true });
+    const marker = new THREE.Mesh(geo, mat);
+    marker.position.copy(point);
+    marker.renderOrder = 998;
+    scene.add(marker);
+    threePointMarkers.push(marker);
+  }
+
+  function clearThreePointPicks(){
+    threePointMarkers.forEach((m) => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    threePointMarkers = [];
+    threePointPicks = [];
+  }
+
+  function registerThreePointPick(point, ownerModel){
+    // Clicking a different model than the first pick starts over on that one.
+    if(threePointPicks.length && threePointPicks[0].model !== ownerModel){
+      clearThreePointPicks();
+    }
+    threePointPicks.push({ point, model: ownerModel });
+    addThreePointMarker(point);
+    updateThreePointButtonLabel();
+
+    if(threePointPicks.length === 3){
+      const [a, b, c] = threePointPicks.map(p => p.point);
+      let normal = new THREE.Vector3()
+        .crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a));
+      if(normal.lengthSq() < 1e-12){
+        // 3 collinear (or duplicate) points don't define a plane — bail out cleanly
+        setThreePointArmed(false);
+        return;
+      }
+      normal.normalize();
+      // Point the normal AWAY from the model's bulk (outward), matching what
+      // reorientToFace expects from a real face normal — otherwise the model
+      // would end up flipped to the wrong side of its new base.
+      const toCenter = new THREE.Vector3().subVectors(ownerModel.group.position, a);
+      if(normal.dot(toCenter) > 0) normal.negate();
+
+      reorientToFace(ownerModel, normal);
+      setThreePointArmed(false);
+    }
+  }
+
   // ================= SECTION CUT TOOL =================
 
   function setSectionArmed(on){
     sectionArmed = on;
-    if(on) setBaseArmed(false);
+    if(on){ setBaseArmed(false); setThreePointArmed(false); }
     const btn = document.getElementById('btnDrawSection');
     btn.classList.toggle('active', on);
     btn.textContent = on ? '◈ Click + drag on model…' : '◈ Draw section line';
@@ -1714,13 +2191,16 @@
 
   function updateToolCursorAndBanner(){
     const banner = document.getElementById('drawBanner');
-    canvas.classList.toggle('crosshair', sectionArmed || baseArmed);
-    banner.classList.toggle('blue', baseArmed);
+    canvas.classList.toggle('crosshair', sectionArmed || baseArmed || threePointArmed);
+    banner.classList.toggle('blue', baseArmed || threePointArmed);
     if(sectionArmed){
       banner.textContent = 'Click and drag across the model to define the cut';
       banner.classList.add('show');
     } else if(baseArmed){
       banner.textContent = 'Click a face on the model to set it as the flat base';
+      banner.classList.add('show');
+    } else if(threePointArmed){
+      banner.textContent = `Click point ${threePointPicks.length + 1} of 3 on the model`;
       banner.classList.add('show');
     } else {
       banner.classList.remove('show');
@@ -1875,7 +2355,6 @@
   function computeSectionOutlineAll(plane){
     let all = [];
     models.forEach((m) => {
-      if(m.isPointCloud) return;
       const positions = m.mesh.geometry.attributes.position.array;
       all = all.concat(computeSectionOutlineForModel(positions, m.group.position, plane));
     });
@@ -1921,9 +2400,8 @@
   function updateClipping(){
     const planes = (clipEnabled && cutPlane) ? [getClipPlane()] : [];
     models.forEach((m) => {
-      m.materialFlat.clippingPlanes = planes; m.materialFlat.needsUpdate = true;
-      if(m.materialColor){ m.materialColor.clippingPlanes = planes; m.materialColor.needsUpdate = true; }
-      if(m.wireMesh){ m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true; }
+      m.mesh.material.clippingPlanes = planes; m.mesh.material.needsUpdate = true;
+      m.wireMesh.material.clippingPlanes = planes; m.wireMesh.material.needsUpdate = true;
     });
   }
 
@@ -2351,45 +2829,15 @@
     handleFiles(e.dataTransfer.files);
   });
 
-  function fileExtension(name){
-    const idx = name.lastIndexOf('.');
-    return idx === -1 ? '' : name.slice(idx + 1).toLowerCase();
-  }
-
   function handleFiles(fileList){
-    const files = Array.from(fileList || []);
-    const companions = new Map(); // lowercase filename -> File, for .mtl and texture images in this batch
-    const loadable = [];
-    files.forEach((file) => {
-      const ext = fileExtension(file.name);
-      if(ext === 'obj' || ext === 'ply' || ext === 'stl'){
-        loadable.push(file);
-      } else {
-        companions.set(file.name.toLowerCase(), file);
-      }
-    });
-    if(loadable.length === 0 && files.length > 0){
-      alert('No .stl, .obj, or .ply file found in what was dropped/selected — only companion-type files (' +
-        files.map(f => f.name).join(', ') + ').');
-      return;
-    }
-    loadable.forEach((file) => handleFile(file, companions));
+    Array.from(fileList || []).forEach(handleFile);
   }
 
-  function handleFile(file, companions){
-    const ext = fileExtension(file.name);
+  function handleFile(file){
     const reader = new FileReader();
+    reader.onload = (e) => loadModelData(e.target.result, file.name);
     reader.onerror = () => alert('Could not read "' + file.name + '".');
-    if(ext === 'obj'){
-      reader.onload = (e) => loadOBJData(e.target.result, file.name, companions || new Map());
-      reader.readAsText(file);
-    } else if(ext === 'ply'){
-      reader.onload = (e) => loadPLYData(e.target.result, file.name);
-      reader.readAsArrayBuffer(file);
-    } else {
-      reader.onload = (e) => loadSTLData(e.target.result, file.name);
-      reader.readAsArrayBuffer(file);
-    }
+    reader.readAsArrayBuffer(file);
   }
 
   let wireOn = false;
@@ -2397,10 +2845,10 @@
   tWire.addEventListener('click', () => {
     wireOn = !wireOn;
     tWire.classList.toggle('on', wireOn);
-    models.forEach(m => { if(m.wireMesh) m.wireMesh.visible = wireOn; });
+    models.forEach(m => { m.wireMesh.visible = wireOn; });
   });
 
-  let gridOn = true;
+  let gridOn = false;
   const tGrid = document.getElementById('tGrid');
   tGrid.addEventListener('click', () => {
     gridOn = !gridOn;
@@ -2414,20 +2862,6 @@
     tSpin.classList.toggle('on', autoRotate);
   });
 
-  let showColor = true;
-  const tColor = document.getElementById('tColor');
-  tColor.addEventListener('click', () => {
-    showColor = !showColor;
-    tColor.classList.toggle('on', showColor);
-    applyColorToggle();
-  });
-  function applyColorToggle(){
-    models.forEach((m) => {
-      if(!m.colored || !m.materialColor) return;
-      m.mesh.material = showColor ? m.materialColor : m.materialFlat;
-    });
-  }
-
   const sBrightness = document.getElementById('sBrightness');
   const brightnessValue = document.getElementById('brightnessValue');
   sBrightness.addEventListener('input', () => {
@@ -2436,9 +2870,49 @@
     brightnessValue.textContent = pct + '%';
   });
 
+  const sModelColor = document.getElementById('sModelColor');
+  sModelColor.addEventListener('input', () => {
+    setModelColorMix(Number(sModelColor.value));
+  });
+
+  const sFov = document.getElementById('sFov');
+  const fovValue = document.getElementById('fovValue');
+  sFov.addEventListener('input', () => {
+    const newFov = Number(sFov.value);
+    const oldFov = camera.fov;
+    if(newFov !== oldFov){
+      // Changing FOV alone would make the model appear to zoom in/out,
+      // since a narrower FOV magnifies whatever's in frame. Compensating
+      // the orbit distance by the ratio of tan(fov/2) keeps the model's
+      // apparent on-screen size constant, so the slider changes the
+      // perspective "look" (how compressed/exaggerated things feel)
+      // without it reading as a zoom.
+      const oldRad = oldFov * Math.PI / 180, newRad = newFov * Math.PI / 180;
+      const compensated = radius * Math.tan(oldRad / 2) / Math.tan(newRad / 2);
+      radius = Math.max(modelRadius * 0.05, Math.min(modelRadius * 30, compensated));
+      camera.fov = newFov;
+      camera.updateProjectionMatrix();
+      updateCamera();
+    }
+    fovValue.textContent = newFov + '°';
+  });
+
   document.getElementById('btnReset').addEventListener('click', () => {
     frameCameraOnModels();
   });
+
+  // ---------- Options panel collapse/expand ----------
+  (function setupPanelToggle(){
+    const appEl = document.getElementById('app');
+    const toggleBtn = document.getElementById('panelToggle');
+    let collapsed = false;
+    toggleBtn.addEventListener('click', () => {
+      collapsed = !collapsed;
+      appEl.classList.toggle('panel-collapsed', collapsed);
+      toggleBtn.textContent = collapsed ? '▶' : '◀';
+      toggleBtn.title = collapsed ? 'Open options' : 'Collapse options';
+    });
+  })();
 
   // ---------- Render loop ----------
   let lastFrame = performance.now();
@@ -2446,6 +2920,7 @@
     requestAnimationFrame(animate);
     const dt = (now - lastFrame) / 1000;
     lastFrame = now;
+    resize(); // cheap no-op unless the container size actually changed (e.g. panel collapsing)
     if(autoRotate && !isDraggingPlane){
       const qSpin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dt * 0.4);
       orbitQuat.premultiply(qSpin).normalize();
