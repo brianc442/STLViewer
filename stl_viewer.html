@@ -570,9 +570,9 @@
           <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
           <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
         </svg>
-        <div>Drop .stl, .obj, or .ply files here<br>or click to browse — add as many as you like</div>
+        <div>Drop .stl, .obj, or .ply files here — for textured OBJs, drop the .mtl and image together<br>or click to browse — add as many as you like</div>
       </div>
-      <input type="file" id="fileInput" accept=".stl,.obj,.ply" multiple>
+      <input type="file" id="fileInput" accept=".stl,.obj,.ply,.mtl,.jpg,.jpeg,.png" multiple>
     </div>
 
     <div class="section" id="modelsSection" style="display:none;">
@@ -1291,8 +1291,25 @@
   }
 
   function loadOBJData(objText, fileName, companions){
-    // MTL support lands in Task 7 — for now, always load without materials.
-    finishOBJLoad(objText, fileName, null, companions);
+    const mtlMatch = objText.match(/^mtllib\s+(.+)$/m);
+    const mtlName = mtlMatch ? mtlMatch[1].trim().toLowerCase() : null;
+    const mtlFile = mtlName ? companions.get(mtlName) : null;
+
+    if(!mtlFile){
+      if(mtlName){
+        console.warn(`"${fileName}" references mtllib "${mtlName}" but no matching file was included in this batch — loading without material color.`);
+      }
+      finishOBJLoad(objText, fileName, null, companions);
+      return;
+    }
+
+    const mtlReader = new FileReader();
+    mtlReader.onerror = () => {
+      console.warn(`Could not read "${mtlFile.name}" — loading "${fileName}" without material color.`);
+      finishOBJLoad(objText, fileName, null, companions);
+    };
+    mtlReader.onload = (e) => finishOBJLoad(objText, fileName, e.target.result, companions);
+    mtlReader.readAsText(mtlFile);
   }
 
   function finishOBJLoad(objText, fileName, mtlText, companions){
