@@ -1412,6 +1412,42 @@
     buildMeshModel(geometry, fileName, 'OBJ', colorMode, colored, size, materialColorOverride);
   }
 
+  function finalizeMultiMaterialOBJ(meshChildren, fileName){
+    const geometries = meshChildren.map((child) => {
+      let geo = child.geometry;
+      if(geo.index) geo = geo.toNonIndexed();
+      if(!geo.attributes.color){
+        const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+        const c = (mat && mat.color) ? mat.color : new THREE.Color(0xffffff);
+        const count = geo.attributes.position.count;
+        const colors = new Float32Array(count * 3);
+        for(let i = 0; i < count; i++){
+          colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+        }
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      }
+      return geo;
+    });
+
+    const merged = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries, false);
+    if(!merged || !merged.attributes.position || merged.attributes.position.count < 3){
+      alert('No triangle data found in "' + fileName + '" — is this a valid OBJ file?');
+      return;
+    }
+
+    merged.computeBoundingBox();
+    const bbox = merged.boundingBox;
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    merged.translate(-center.x, -center.y, -center.z);
+    merged.computeVertexNormals();
+    merged.computeBoundingBox();
+
+    buildMeshModel(merged, fileName, 'OBJ', 'material', true, size, buildVertexColorMaterial());
+  }
+
   function loadOBJPointCloudFallback(objText, fileName){
     const positions = [];
     const colors = [];
