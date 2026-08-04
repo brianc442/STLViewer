@@ -6,6 +6,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three-mesh-bvh@0.5.24/build/index.umd.cjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <style>
   :root{
     --bg: #0d1210;
@@ -364,7 +365,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint, #threePointHint, #measure3DHint{
+  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #undercutHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -374,6 +375,7 @@
   #baseHint b{ color: var(--base); font-weight: 500; }
   #threePointHint b{ color: var(--base); font-weight: 500; }
   #measure3DHint b{ color: var(--base); font-weight: 500; }
+  #undercutHint b{ color: #ff6b5c; font-weight: 500; }
 
   .measure3d-label{
     display: flex;
@@ -792,6 +794,24 @@
       </div>
     </div>
 
+    <div class="section">
+      <div class="section-label">Undercut</div>
+      <button class="action primary blue" id="btnUndercut" disabled>⬒ Show undercuts</button>
+      <div id="undercutHint">Highlights faces that would be shadowed when withdrawing along the <b>insertion axis</b> (the arrow) — drag its rotation rings to orient it. Defaults to straight up.</div>
+      <div id="undercutControls" style="display:none;">
+        <div style="display:flex; gap:14px; margin-top:8px; font-size:11px; color:var(--ink-dim);">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#5c7268;margin-right:4px;"></span>Clear</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff6b5c;margin-right:4px;"></span>Undercut</span>
+        </div>
+        <div class="model-opacity-row" style="margin-top:8px;">
+          <span class="model-opacity-label">Tolerance</span>
+          <input type="range" class="model-opacity-slider" id="sUndercutTolerance" min="0" max="30" value="5">
+          <span class="model-opacity-value" id="undercutToleranceValue">5°</span>
+        </div>
+        <button class="action ghost" id="btnUndercutResetAxis" style="margin-top:8px;">Reset axis to vertical</button>
+      </div>
+    </div>
+
     <div id="hint">
       <b>Drag</b> to orbit &nbsp; <b>Scroll</b> to zoom<br>
       <b>Shift+Drag</b> or <b>Right-drag</b> to pan
@@ -1064,6 +1084,15 @@
 
   const raycaster = new THREE.Raycaster();
 
+  // ---------- Undercut tool state ----------
+  let undercutActive = false;
+  let undercutTolerance = 5; // degrees
+  let undercutPivot = null;       // Object3D whose local +Y is the insertion axis
+  let undercutArrow = null;       // visual cone+cylinder, child of the pivot
+  let undercutControls = null;    // THREE.TransformControls, rotate-only
+  const undercutOverlays = new Map(); // modelId -> per-face-colored overlay THREE.Mesh
+  let undercutRecomputeQueued = false;
+
   // ---------- Shared BVH acceleration (three-mesh-bvh) ----------
   // Installed once, globally. acceleratedRaycast() checks geometry.boundsTree
   // and transparently falls back to the stock triangle walk when it's absent,
@@ -1268,6 +1297,14 @@
     if(e.button === 1) e.preventDefault(); // stop the browser's native middle-click autoscroll
     const isPrimaryClick = e.button === 0;
 
+    // 0) The undercut axis gizmo owns this click if the pointer is over one
+    // of its rotation rings. `axis` is set by TransformControls' own
+    // pointermove hover handling, which always runs before a click on the
+    // same spot, so this check is reliable without racing its own
+    // pointerdown listener (also registered on `canvas`).
+    if(undercutActive && undercutControls && undercutControls.axis && isPrimaryClick){
+      return;
+    }
     // 1) Picking 3 points to define a custom flat base
     if(threePointArmed && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
@@ -1980,8 +2017,10 @@
     document.getElementById('btnPickBase').disabled = false;
     document.getElementById('btnPick3Point').disabled = false;
     document.getElementById('btnMeasure3D').disabled = false;
+    document.getElementById('btnUndercut').disabled = false;
 
     if(cutPlane) refreshSection(); // fold the newly added model into the live section
+    if(undercutActive) requestUndercutRecompute(); // fold the newly added model into the live overlay
   }
 
   // Every model shares the same X/Z spot at the origin — only its own
@@ -2041,6 +2080,7 @@
     const idx = models.findIndex(m => m.id === id);
     if(idx === -1) return;
     const m = models[idx];
+    disposeUndercutOverlay(id);
     clearMeasurementsForModel(id);
     BVHUtils.disposeBVH(m);
     scene.remove(m.group);
@@ -2058,8 +2098,10 @@
       document.getElementById('btnPickBase').disabled = true;
       document.getElementById('btnPick3Point').disabled = true;
       document.getElementById('btnMeasure3D').disabled = true;
+      document.getElementById('btnUndercut').disabled = true;
       setThreePointArmed(false);
       setMeasure3DArmed(false);
+      if(undercutActive) setUndercutActive(false);
       clearSection();
     } else if(cutPlane){
       refreshSection();
@@ -2455,6 +2497,170 @@
   function updateMeasure3DUI(){
     document.getElementById('measure3DControls').style.display = measurements3D.length ? 'block' : 'none';
     document.getElementById('measure3DCount').textContent = String(measurements3D.length);
+  }
+
+  // ================= UNDERCUT TOOL =================
+  // Purely visual/analytical — no BVH, no geometry mutation. For every
+  // loaded model, faces whose normal points away from the chosen insertion
+  // (withdrawal) axis beyond the tolerance angle are highlighted on a
+  // per-model colored overlay mesh (the source mesh is hidden underneath
+  // while its overlay is shown). The axis itself is a THREE.TransformControls
+  // gizmo, restricted to rotate-only, attached to a pivot whose local +Y is
+  // the axis direction; a visible arrow child shows the direction it's
+  // currently withdrawing along.
+  const UNDERCUT_SAFE_COLOR = new THREE.Color(0x5c7268);
+  const UNDERCUT_FLAG_COLOR = new THREE.Color(0xff6b5c);
+
+  function createUndercutArrow(){
+    const group = new THREE.Group();
+    const shaftLen = 1, shaftRadius = 0.03, headLen = 0.28, headRadius = 0.09;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff6b5c, depthTest: false, transparent: true, opacity: 0.9 });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLen, 12), mat);
+    shaft.position.y = shaftLen / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(headRadius, headLen, 16), mat);
+    head.position.y = shaftLen + headLen / 2;
+    group.add(shaft, head);
+    group.renderOrder = 999;
+    return group;
+  }
+
+  function ensureUndercutSetup(){
+    if(undercutPivot) return;
+    undercutPivot = new THREE.Object3D();
+    undercutArrow = createUndercutArrow();
+    undercutPivot.add(undercutArrow);
+    undercutPivot.visible = false;
+    scene.add(undercutPivot);
+
+    undercutControls = new THREE.TransformControls(camera, canvas);
+    undercutControls.setMode('rotate');
+    undercutControls.setSize(1.1);
+    scene.add(undercutControls);
+    undercutControls.addEventListener('objectChange', requestUndercutRecompute);
+  }
+
+  function setUndercutActive(on){
+    if(on && !models.length) return;
+    ensureUndercutSetup();
+    undercutActive = on;
+    document.getElementById('btnUndercut').classList.toggle('active', on);
+    document.getElementById('undercutControls').style.display = on ? 'block' : 'none';
+
+    if(on){
+      const { min, max } = recomputeCombinedBounds();
+      undercutPivot.position.copy(min).add(max).multiplyScalar(0.5);
+      undercutArrow.scale.setScalar(Math.max(modelRadius, 0.5) * 0.9);
+      undercutPivot.visible = true;
+      undercutControls.attach(undercutPivot);
+      models.forEach((m) => { m.mesh.visible = false; });
+      recomputeUndercut();
+    } else {
+      undercutControls.detach();
+      undercutPivot.visible = false;
+      undercutOverlays.forEach((overlay) => { overlay.visible = false; });
+      models.forEach((m) => { m.mesh.visible = true; });
+    }
+  }
+
+  document.getElementById('btnUndercut').addEventListener('click', () => {
+    if(!models.length) return;
+    setUndercutActive(!undercutActive);
+  });
+  document.getElementById('sUndercutTolerance').addEventListener('input', (e) => {
+    undercutTolerance = Number(e.target.value);
+    document.getElementById('undercutToleranceValue').textContent = undercutTolerance + '°';
+    requestUndercutRecompute();
+  });
+  document.getElementById('btnUndercutResetAxis').addEventListener('click', () => {
+    if(!undercutPivot) return;
+    undercutPivot.quaternion.identity();
+    requestUndercutRecompute();
+  });
+
+  // Coalesces bursts of 'objectChange' events (fired continuously while
+  // dragging the gizmo) down to at most one recompute per rendered frame.
+  function requestUndercutRecompute(){
+    if(undercutRecomputeQueued) return;
+    undercutRecomputeQueued = true;
+    requestAnimationFrame(() => {
+      undercutRecomputeQueued = false;
+      if(undercutActive) recomputeUndercut();
+    });
+  }
+
+  function recomputeUndercut(){
+    if(!undercutActive || !undercutPivot) return;
+    const worldAxis = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(undercutPivot.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const sinTol = Math.sin(undercutTolerance * Math.PI / 180);
+    models.forEach((model) => updateUndercutOverlay(model, worldAxis, sinTol));
+  }
+
+  function updateUndercutOverlay(model, worldAxis, sinTol){
+    let overlay = undercutOverlays.get(model.id);
+    if(!overlay){
+      const geo = model.mesh.geometry.clone();
+      geo.deleteAttribute('color'); // don't inherit the source model's own file-provided vertex colors
+      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      overlay = new THREE.Mesh(geo, mat);
+      overlay.renderOrder = 5;
+      overlay.position.copy(model.mesh.position);
+      overlay.quaternion.copy(model.mesh.quaternion);
+      overlay.scale.copy(model.mesh.scale);
+      model.group.add(overlay);
+      undercutOverlays.set(model.id, overlay);
+    }
+    overlay.visible = true;
+
+    const posAttr = overlay.geometry.attributes.position;
+    let colorAttr = overlay.geometry.attributes.color;
+    if(!colorAttr){
+      colorAttr = new THREE.BufferAttribute(new Float32Array(posAttr.count * 3), 3);
+      overlay.geometry.setAttribute('color', colorAttr);
+    }
+
+    // Face normals below are computed directly from this LOCAL-space
+    // geometry (non-indexed triangle-soup — one unique vertex triple per
+    // face), so the world-space withdrawal axis needs to be rotated into
+    // that same local space to compare against them.
+    const worldQuat = new THREE.Quaternion();
+    model.mesh.getWorldQuaternion(worldQuat);
+    const localAxis = worldAxis.clone().applyQuaternion(worldQuat.invert()).normalize();
+
+    const arr = colorAttr.array;
+    const pa = posAttr.array;
+    const triCount = posAttr.count / 3;
+    const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+    for(let t = 0; t < triCount; t++){
+      const i0 = t * 9;
+      vA.set(pa[i0], pa[i0 + 1], pa[i0 + 2]);
+      vB.set(pa[i0 + 3], pa[i0 + 4], pa[i0 + 5]);
+      vC.set(pa[i0 + 6], pa[i0 + 7], pa[i0 + 8]);
+      e1.subVectors(vB, vA);
+      e2.subVectors(vC, vA);
+      n.crossVectors(e1, e2).normalize();
+      // Undercut when the face normal points more than (90 + tolerance)
+      // degrees away from the withdrawal axis, i.e. the surface would be
+      // shadowed while pulling out along that axis. cos(90+tol) = -sin(tol).
+      const isUndercut = n.dot(localAxis) < -sinTol;
+      const c = isUndercut ? UNDERCUT_FLAG_COLOR : UNDERCUT_SAFE_COLOR;
+      for(let v = 0; v < 3; v++){
+        const o = i0 + v * 3;
+        arr[o] = c.r; arr[o + 1] = c.g; arr[o + 2] = c.b;
+      }
+    }
+    colorAttr.needsUpdate = true;
+  }
+
+  function disposeUndercutOverlay(modelId){
+    const overlay = undercutOverlays.get(modelId);
+    if(!overlay) return;
+    if(overlay.parent) overlay.parent.remove(overlay);
+    overlay.geometry.dispose();
+    overlay.material.dispose();
+    undercutOverlays.delete(modelId);
   }
 
   // ================= SECTION CUT TOOL =================
