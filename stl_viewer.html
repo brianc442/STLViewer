@@ -2788,7 +2788,14 @@
     geo.deleteAttribute('color'); // don't inherit the compare model's own file-provided vertex colors
     const colorAttr = new THREE.BufferAttribute(new Float32Array(raw.length * 3), 3);
     geo.setAttribute('color', colorAttr);
-    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    // MeshBasicMaterial is unlit — every same-valued region would render as
+    // one flat color with no shading, making the surface's actual shape
+    // unreadable. MeshPhongMaterial responds to the same scene lights as
+    // the base mesh, so curvature/detail stays visible under the heatmap.
+    const mat = new THREE.MeshPhongMaterial({
+      vertexColors: true, color: 0xffffff, flatShading: true,
+      specular: 0x111111, shininess: 18, side: THREE.DoubleSide
+    });
     const overlay = new THREE.Mesh(geo, mat);
     overlay.renderOrder = 5;
     overlay.position.copy(compareModel.mesh.position);
