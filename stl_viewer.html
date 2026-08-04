@@ -245,6 +245,14 @@
     color: var(--ink-dim);
     flex-shrink: 0;
   }
+  .model-opacity-toggle{
+    cursor: pointer;
+    user-select: none;
+  }
+  .model-opacity-toggle:hover{
+    color: var(--ink, #fff);
+    text-decoration: underline;
+  }
   .model-opacity-slider{
     flex: 1;
     -webkit-appearance: none;
@@ -1827,6 +1835,7 @@
       vertCount: parsed.positions.length / 3,
       size,
       opacity: 100,
+      lastOpacity: 100,
       hasVertexColors
     };
     models.push(model);
@@ -1933,12 +1942,24 @@
     const m = models.find(m => m.id === id);
     if(!m) return;
     m.opacity = pct;
+    if(pct > 0) m.lastOpacity = pct;
     const a = pct / 100;
     m.mesh.material.transparent = a < 1;
     m.mesh.material.opacity = a;
     m.mesh.material.needsUpdate = true;
     m.wireMesh.material.opacity = 0.35 * a;
     m.wireMesh.material.needsUpdate = true;
+  }
+
+  function toggleModelOpacity(id){
+    const m = models.find(m => m.id === id);
+    if(!m) return;
+    if(m.opacity > 0){
+      setModelOpacity(id, 0);
+    } else {
+      setModelOpacity(id, m.lastOpacity > 0 ? m.lastOpacity : 100);
+    }
+    renderModelList();
   }
 
   // ---------- Loaded-models list UI ----------
@@ -1963,7 +1984,7 @@
         </div>
         <div class="model-meta">${m.format} · ${m.triCount.toLocaleString()} tris · ${m.size.x.toFixed(1)}×${m.size.z.toFixed(1)}×${m.size.y.toFixed(1)}${m.hasVertexColors ? ' · <span class="model-vcolor-tag">●&nbsp;vertex colors</span>' : ''}</div>
         <div class="model-opacity-row">
-          <span class="model-opacity-label">Opacity</span>
+          <span class="model-opacity-label model-opacity-toggle" data-id="${m.id}" title="Toggle opacity">Opacity</span>
           <input type="range" class="model-opacity-slider" data-id="${m.id}" min="0" max="100" value="${m.opacity}">
           <span class="model-opacity-value" data-id="${m.id}">${m.opacity}%</span>
         </div>
@@ -1984,6 +2005,9 @@
         const valueLabel = listEl.querySelector(`.model-opacity-value[data-id="${id}"]`);
         if(valueLabel) valueLabel.textContent = pct + '%';
       });
+    });
+    listEl.querySelectorAll('.model-opacity-toggle').forEach((label) => {
+      label.addEventListener('click', () => toggleModelOpacity(Number(label.dataset.id)));
     });
     listEl.querySelectorAll('.model-remove').forEach((btn) => {
       btn.addEventListener('click', () => removeModel(Number(btn.dataset.id)));
