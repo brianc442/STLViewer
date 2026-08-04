@@ -451,7 +451,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #undercutHint{
+  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #undercutHint, #devHint, #thkHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -462,6 +462,8 @@
   #threePointHint b{ color: var(--base); font-weight: 500; }
   #measure3DHint b{ color: var(--base); font-weight: 500; }
   #undercutHint b{ color: #ff6b5c; font-weight: 500; }
+  #devHint b{ color: var(--base); font-weight: 500; }
+  #thkHint b{ color: var(--base); font-weight: 500; }
 
   .measure3d-label{
     display: flex;
@@ -896,6 +898,30 @@
         </div>
         <button class="action ghost" id="btnUndercutFromView" style="margin-top:8px;">Set axis from view</button>
         <button class="action ghost" id="btnUndercutResetAxis" style="margin-top:6px;">Reset axis to vertical</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Deviation Map</div>
+      <div class="side-select-row">
+        <label for="devBaseSelect">Base</label>
+        <select class="side-select" id="devBaseSelect"></select>
+      </div>
+      <div class="side-select-row">
+        <label for="devCompareSelect">Compare</label>
+        <select class="side-select" id="devCompareSelect"></select>
+      </div>
+      <button class="action primary blue" id="btnDevCompute" disabled style="margin-top:8px;">Compute deviation</button>
+      <div id="devHint">Signed distance from the <b>compare</b> mesh to the nearest point on the <b>base</b> mesh, colored as a heatmap. Meshes are used exactly as currently positioned — no alignment step.</div>
+      <div id="devProgressRow" style="display:none;">
+        <div class="progress-track"><div class="progress-fill" id="devProgressFill"></div></div>
+      </div>
+      <div id="devResultControls" style="display:none;">
+        <div class="toggle-row" style="padding-top:8px;">
+          <label for="tDevShow">Show overlay</label>
+          <div class="switch on" id="tDevShow"></div>
+        </div>
+        <div id="devColorScaleHost"></div>
       </div>
     </div>
 
@@ -2931,6 +2957,160 @@
     overlay.geometry.dispose();
     overlay.material.dispose();
     undercutOverlays.delete(modelId);
+  }
+
+  // ================= DEVIATION MAP TOOL =================
+  // Per-point (nearest-surface, via BVHUtils — not vertex-to-vertex) signed
+  // distance from the "compare" mesh's own vertices to the "base" mesh's
+  // surface. Meshes are used exactly as currently positioned in the scene —
+  // no alignment/registration step. The raw distance array is cached on
+  // devResult and only ever recolored (never re-queried against the BVH)
+  // when the shared ColorScale's range/mode changes.
+
+  function refreshDevModelSelects(){
+    const baseSel = document.getElementById('devBaseSelect');
+    const compareSel = document.getElementById('devCompareSelect');
+    const optsHtml = models.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+    baseSel.innerHTML = optsHtml;
+    compareSel.innerHTML = optsHtml;
+
+    if(!models.find(m => m.id === devBaseId)) devBaseId = models[0] ? models[0].id : null;
+    if(!models.find(m => m.id === devCompareId)){
+      devCompareId = (models[1] || models[0] || { id: null }).id;
+    }
+    if(devBaseId != null) baseSel.value = String(devBaseId);
+    if(devCompareId != null) compareSel.value = String(devCompareId);
+
+    document.getElementById('btnDevCompute').disabled = models.length < 2 || devBaseId === devCompareId;
+  }
+
+  document.getElementById('devBaseSelect').addEventListener('change', (e) => {
+    devBaseId = Number(e.target.value);
+    document.getElementById('btnDevCompute').disabled = models.length < 2 || devBaseId === devCompareId;
+  });
+  document.getElementById('devCompareSelect').addEventListener('change', (e) => {
+    devCompareId = Number(e.target.value);
+    document.getElementById('btnDevCompute').disabled = models.length < 2 || devBaseId === devCompareId;
+  });
+  document.getElementById('btnDevCompute').addEventListener('click', computeDeviation);
+  document.getElementById('tDevShow').addEventListener('click', () => {
+    devShowOverlay = !devShowOverlay;
+    document.getElementById('tDevShow').classList.toggle('on', devShowOverlay);
+    if(devResult){
+      devResult.overlay.visible = devShowOverlay;
+      const compareModel = models.find(m => m.id === devResult.compareId);
+      if(compareModel) compareModel.mesh.visible = !devShowOverlay;
+    }
+  });
+
+  function computeDeviation(){
+    const baseModel = models.find(m => m.id === devBaseId);
+    const compareModel = models.find(m => m.id === devCompareId);
+    if(!baseModel || !compareModel || baseModel === compareModel) return;
+
+    disposeDeviationResult();
+    const baseBVH = BVHUtils.ensureBVH(baseModel);
+
+    const geo = compareModel.mesh.geometry;
+    const posAttr = geo.attributes.position;
+    const normAttr = geo.attributes.normal;
+    const vertCount = posAttr.count;
+    const raw = new Float32Array(vertCount);
+
+    // Combined transform taking a point/direction from the compare mesh's
+    // LOCAL space directly into the base mesh's LOCAL space, so the BVH
+    // query (which operates in the base geometry's own local coordinates)
+    // and the sign check below both happen in one consistent frame.
+    const compareToBase = new THREE.Matrix4()
+      .copy(baseModel.mesh.matrixWorld).invert()
+      .multiply(compareModel.mesh.matrixWorld);
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(compareToBase);
+
+    const p = new THREE.Vector3(), n = new THREE.Vector3(), diff = new THREE.Vector3();
+
+    document.getElementById('devProgressRow').style.display = 'block';
+    document.getElementById('devProgressFill').style.width = '0%';
+    document.getElementById('btnDevCompute').disabled = true;
+
+    BVHUtils.runChunked(vertCount, 2000, (i) => {
+      p.fromBufferAttribute(posAttr, i).applyMatrix4(compareToBase);
+      n.fromBufferAttribute(normAttr, i).applyMatrix3(normalMatrix).normalize();
+      const hit = BVHUtils.closestSurfacePoint(baseBVH, p);
+      if(!hit){ raw[i] = 0; return; }
+      diff.subVectors(p, hit.point);
+      // Stored in µm (scene units are mm) — matches how deviation is
+      // conventionally read in dental CAD, and the color-scale's default
+      // range below.
+      raw[i] = (diff.dot(n) >= 0 ? 1 : -1) * hit.distance * 1000;
+    }, (frac) => {
+      document.getElementById('devProgressFill').style.width = (frac * 100).toFixed(0) + '%';
+    }, () => {
+      finishDeviationCompute(compareModel, baseModel, raw);
+    });
+  }
+
+  function finishDeviationCompute(compareModel, baseModel, raw){
+    document.getElementById('devProgressRow').style.display = 'none';
+    document.getElementById('btnDevCompute').disabled = false;
+
+    const geo = compareModel.mesh.geometry.clone();
+    geo.deleteAttribute('color'); // don't inherit the compare model's own file-provided vertex colors
+    const colorAttr = new THREE.BufferAttribute(new Float32Array(raw.length * 3), 3);
+    geo.setAttribute('color', colorAttr);
+    // MeshBasicMaterial is unlit — every same-valued region would render as
+    // one flat color with no shading, making the surface's actual shape
+    // unreadable. MeshPhongMaterial responds to the same scene lights as
+    // the base mesh, so curvature/detail stays visible under the heatmap.
+    const devA = compareModel.opacity / 100;
+    const mat = new THREE.MeshPhongMaterial({
+      vertexColors: true, color: 0xffffff, flatShading: true,
+      specular: 0x111111, shininess: 18, side: THREE.DoubleSide,
+      transparent: devA < 1, opacity: devA
+    });
+    const overlay = new THREE.Mesh(geo, mat);
+    overlay.renderOrder = 5;
+    overlay.position.copy(compareModel.mesh.position);
+    overlay.quaternion.copy(compareModel.mesh.quaternion);
+    overlay.scale.copy(compareModel.mesh.scale);
+    compareModel.group.add(overlay);
+
+    const hostEl = document.getElementById('devColorScaleHost');
+    hostEl.innerHTML = '';
+    const colorScale = createColorScale(hostEl, {
+      unit: 'µm', step: 5, min: -100, max: 300, threshLo: 0, threshHi: 100, mode: 'gradient',
+      onChange: () => recolorDeviationOverlay()
+    });
+
+    devResult = { compareId: compareModel.id, baseId: baseModel.id, raw, overlay, colorScale };
+    compareModel.mesh.visible = !devShowOverlay;
+    overlay.visible = devShowOverlay;
+
+    document.getElementById('devResultControls').style.display = 'block';
+    recolorDeviationOverlay();
+  }
+
+  function recolorDeviationOverlay(){
+    if(!devResult) return;
+    const colorAttr = devResult.overlay.geometry.attributes.color;
+    const arr = colorAttr.array;
+    for(let i = 0; i < devResult.raw.length; i++){
+      const c = devResult.colorScale.colorForValue(devResult.raw[i]);
+      const o = i * 3;
+      arr[o] = c.r; arr[o + 1] = c.g; arr[o + 2] = c.b;
+    }
+    colorAttr.needsUpdate = true;
+  }
+
+  function disposeDeviationResult(){
+    if(!devResult) return;
+    const compareModel = models.find(m => m.id === devResult.compareId);
+    if(compareModel) compareModel.mesh.visible = true;
+    if(devResult.overlay.parent) devResult.overlay.parent.remove(devResult.overlay);
+    devResult.overlay.geometry.dispose();
+    devResult.overlay.material.dispose();
+    devResult = null;
+    document.getElementById('devResultControls').style.display = 'none';
+    document.getElementById('devColorScaleHost').innerHTML = '';
   }
 
   // ================= THICKNESS MAP TOOL =================
