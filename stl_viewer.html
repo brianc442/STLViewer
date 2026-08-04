@@ -2120,6 +2120,16 @@
     m.mesh.material.needsUpdate = true;
     m.wireMesh.material.opacity = 0.35 * a;
     m.wireMesh.material.needsUpdate = true;
+
+    // The undercut overlay substitutes for the base mesh (hidden) while
+    // active, so its material needs the same opacity — otherwise changing
+    // opacity while the tool is showing appears to do nothing.
+    const undercutOverlay = undercutOverlays.get(id);
+    if(undercutOverlay){
+      undercutOverlay.material.transparent = a < 1;
+      undercutOverlay.material.opacity = a;
+      undercutOverlay.material.needsUpdate = true;
+    }
   }
 
   function toggleModelOpacity(id){
@@ -2617,9 +2627,11 @@
       // flat color with no shading, making the model's actual shape
       // unreadable. MeshPhongMaterial responds to the same scene lights as
       // the base mesh, so curvature/detail stays visible under the tint.
+      const a = model.opacity / 100;
       const mat = new THREE.MeshPhongMaterial({
         vertexColors: true, color: 0xffffff, flatShading: true,
-        specular: 0x111111, shininess: 18, side: THREE.DoubleSide
+        specular: 0x111111, shininess: 18, side: THREE.DoubleSide,
+        transparent: a < 1, opacity: a
       });
       overlay = new THREE.Mesh(geo, mat);
       overlay.renderOrder = 5;
