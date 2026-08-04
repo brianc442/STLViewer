@@ -450,7 +450,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #devHint{
+  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #devHint, #thkHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -461,6 +461,7 @@
   #threePointHint b{ color: var(--base); font-weight: 500; }
   #measure3DHint b{ color: var(--base); font-weight: 500; }
   #devHint b{ color: var(--base); font-weight: 500; }
+  #thkHint b{ color: var(--base); font-weight: 500; }
 
   .measure3d-label{
     display: flex;
@@ -900,6 +901,26 @@
           <div class="switch on" id="tDevShow"></div>
         </div>
         <div id="devColorScaleHost"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Thickness Map</div>
+      <div class="side-select-row">
+        <label for="thkModelSelect">Model</label>
+        <select class="side-select" id="thkModelSelect"></select>
+      </div>
+      <button class="action primary blue" id="btnThkCompute" disabled style="margin-top:8px;">Compute thickness</button>
+      <div id="thkHint">Self-referential wall thickness: casts an inward ray from each surface point to the nearest opposing internal surface. Works best on a closed (watertight) mesh.</div>
+      <div id="thkProgressRow" style="display:none;">
+        <div class="progress-track"><div class="progress-fill" id="thkProgressFill"></div></div>
+      </div>
+      <div id="thkResultControls" style="display:none;">
+        <div class="toggle-row" style="padding-top:8px;">
+          <label for="tThkShow">Show overlay</label>
+          <div class="switch on" id="tThkShow"></div>
+        </div>
+        <div id="thkColorScaleHost"></div>
       </div>
     </div>
 
@@ -1353,6 +1374,11 @@
   let devCompareId = null;
   let devResult = null; // { compareId, baseId, raw: Float32Array (mm), overlay: THREE.Mesh, colorScale }
   let devShowOverlay = true;
+
+  // ---------- Thickness map state ----------
+  let thkModelId = null;
+  let thkResult = null; // { modelId, raw: Float32Array (mm, -1 = no reading), overlay: THREE.Mesh, colorScale }
+  let thkShowOverlay = true;
 
   // ---------- Manual orbit controls ----------
   // Camera orientation is tracked as a quaternion built from continuous,
@@ -2275,6 +2301,7 @@
     clearMeasurementsForModel(id);
     BVHUtils.disposeBVH(m);
     if(devResult && (devResult.baseId === id || devResult.compareId === id)) disposeDeviationResult();
+    if(thkResult && thkResult.modelId === id) disposeThicknessResult();
     scene.remove(m.group);
     m.mesh.geometry.dispose(); m.mesh.material.dispose();
     m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
@@ -2334,6 +2361,7 @@
   // ---------- Loaded-models list UI ----------
   function renderModelList(){
     refreshDevModelSelects();
+    refreshThkModelSelect();
     const listEl = document.getElementById('modelList');
     const summaryEl = document.getElementById('modelSummary');
     if(models.length === 0){
@@ -2851,6 +2879,130 @@
     devResult = null;
     document.getElementById('devResultControls').style.display = 'none';
     document.getElementById('devColorScaleHost').innerHTML = '';
+  }
+
+  // ================= THICKNESS MAP TOOL =================
+  // Self-referential wall thickness: for each surface point, casts an
+  // inward ray (opposite its own normal) via BVHUtils against the SAME
+  // mesh's BVH and measures the distance to the nearest opposing internal
+  // surface. Shares the ColorScale component with the deviation map so the
+  // two heatmap tools read as one visual language; a vertex with no hit
+  // (open/non-watertight mesh) is left a distinct neutral gray rather than
+  // colored as if it were a real (mis)measurement.
+  const THK_EPS = 1e-4; // local-space offset so the inward ray doesn't immediately re-hit its own origin triangle
+  const THK_NO_READING_COLOR = new THREE.Color(0x3a3a3a);
+
+  function refreshThkModelSelect(){
+    const sel = document.getElementById('thkModelSelect');
+    sel.innerHTML = models.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+    if(!models.find(m => m.id === thkModelId)) thkModelId = models[0] ? models[0].id : null;
+    if(thkModelId != null) sel.value = String(thkModelId);
+    document.getElementById('btnThkCompute').disabled = !models.length;
+  }
+
+  document.getElementById('thkModelSelect').addEventListener('change', (e) => {
+    thkModelId = Number(e.target.value);
+  });
+  document.getElementById('btnThkCompute').addEventListener('click', computeThickness);
+  document.getElementById('tThkShow').addEventListener('click', () => {
+    thkShowOverlay = !thkShowOverlay;
+    document.getElementById('tThkShow').classList.toggle('on', thkShowOverlay);
+    if(thkResult){
+      thkResult.overlay.visible = thkShowOverlay;
+      const model = models.find(m => m.id === thkResult.modelId);
+      if(model) model.mesh.visible = !thkShowOverlay;
+    }
+  });
+
+  function computeThickness(){
+    const model = models.find(m => m.id === thkModelId);
+    if(!model) return;
+
+    disposeThicknessResult();
+    const bvh = BVHUtils.ensureBVH(model);
+
+    const geo = model.mesh.geometry;
+    const posAttr = geo.attributes.position;
+    const normAttr = geo.attributes.normal;
+    const vertCount = posAttr.count;
+    const raw = new Float32Array(vertCount);
+
+    const p = new THREE.Vector3(), n = new THREE.Vector3(), origin = new THREE.Vector3();
+
+    document.getElementById('thkProgressRow').style.display = 'block';
+    document.getElementById('thkProgressFill').style.width = '0%';
+    document.getElementById('btnThkCompute').disabled = true;
+
+    BVHUtils.runChunked(vertCount, 2000, (i) => {
+      p.fromBufferAttribute(posAttr, i);
+      n.fromBufferAttribute(normAttr, i).normalize();
+      origin.copy(p).addScaledVector(n, -THK_EPS);
+      const hit = BVHUtils.castLocal(bvh, origin, n.clone().negate());
+      raw[i] = hit ? (hit.distance + THK_EPS) : -1; // -1 = no opposing surface found
+    }, (frac) => {
+      document.getElementById('thkProgressFill').style.width = (frac * 100).toFixed(0) + '%';
+    }, () => {
+      finishThicknessCompute(model, raw);
+    });
+  }
+
+  function finishThicknessCompute(model, raw){
+    document.getElementById('thkProgressRow').style.display = 'none';
+    document.getElementById('btnThkCompute').disabled = false;
+
+    const geo = model.mesh.geometry.clone();
+    geo.deleteAttribute('color'); // don't inherit the source model's own file-provided vertex colors
+    const colorAttr = new THREE.BufferAttribute(new Float32Array(raw.length * 3), 3);
+    geo.setAttribute('color', colorAttr);
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const overlay = new THREE.Mesh(geo, mat);
+    overlay.renderOrder = 5;
+    overlay.position.copy(model.mesh.position);
+    overlay.quaternion.copy(model.mesh.quaternion);
+    overlay.scale.copy(model.mesh.scale);
+    model.group.add(overlay);
+
+    const hostEl = document.getElementById('thkColorScaleHost');
+    hostEl.innerHTML = '';
+    // Threshold mode's band is reused as a one-sided "flag below minimum"
+    // check: threshHi is left at the top of the practical range so the
+    // meaningful, editable bound is threshLo (the minimum safe thickness).
+    const colorScale = createColorScale(hostEl, {
+      unit: 'mm', step: 0.05, min: 0, max: 3, threshLo: 0.8, threshHi: 3, mode: 'gradient',
+      onChange: () => recolorThicknessOverlay()
+    });
+
+    thkResult = { modelId: model.id, raw, overlay, colorScale };
+    model.mesh.visible = !thkShowOverlay;
+    overlay.visible = thkShowOverlay;
+
+    document.getElementById('thkResultControls').style.display = 'block';
+    recolorThicknessOverlay();
+  }
+
+  function recolorThicknessOverlay(){
+    if(!thkResult) return;
+    const colorAttr = thkResult.overlay.geometry.attributes.color;
+    const arr = colorAttr.array;
+    for(let i = 0; i < thkResult.raw.length; i++){
+      const v = thkResult.raw[i];
+      const c = v < 0 ? THK_NO_READING_COLOR : thkResult.colorScale.colorForValue(v);
+      const o = i * 3;
+      arr[o] = c.r; arr[o + 1] = c.g; arr[o + 2] = c.b;
+    }
+    colorAttr.needsUpdate = true;
+  }
+
+  function disposeThicknessResult(){
+    if(!thkResult) return;
+    const model = models.find(m => m.id === thkResult.modelId);
+    if(model) model.mesh.visible = true;
+    if(thkResult.overlay.parent) thkResult.overlay.parent.remove(thkResult.overlay);
+    thkResult.overlay.geometry.dispose();
+    thkResult.overlay.material.dispose();
+    thkResult = null;
+    document.getElementById('thkResultControls').style.display = 'none';
+    document.getElementById('thkColorScaleHost').innerHTML = '';
   }
 
   // ================= SECTION CUT TOOL =================
