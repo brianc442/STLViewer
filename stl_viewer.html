@@ -2613,7 +2613,14 @@
     if(!overlay){
       const geo = model.mesh.geometry.clone();
       geo.deleteAttribute('color'); // don't inherit the source model's own file-provided vertex colors
-      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      // MeshBasicMaterial is unlit — every "safe" face would render as one
+      // flat color with no shading, making the model's actual shape
+      // unreadable. MeshPhongMaterial responds to the same scene lights as
+      // the base mesh, so curvature/detail stays visible under the tint.
+      const mat = new THREE.MeshPhongMaterial({
+        vertexColors: true, color: 0xffffff, flatShading: true,
+        specular: 0x111111, shininess: 18, side: THREE.DoubleSide
+      });
       overlay = new THREE.Mesh(geo, mat);
       overlay.renderOrder = 5;
       overlay.position.copy(model.mesh.position);
