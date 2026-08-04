@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>STL Viewer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three-mesh-bvh@0.5.24/build/index.umd.cjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
 <style>
   :root{
     --bg: #0d1210;
@@ -362,7 +364,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint, #threePointHint{
+  #sectionHint, #baseHint, #threePointHint, #measure3DHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -371,6 +373,33 @@
   #sectionHint b{ color: var(--cut); font-weight: 500; }
   #baseHint b{ color: var(--base); font-weight: 500; }
   #threePointHint b{ color: var(--base); font-weight: 500; }
+  #measure3DHint b{ color: var(--base); font-weight: 500; }
+
+  .measure3d-label{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(13,18,16,0.85);
+    color: #6bb8ff;
+    font: 11px "IBM Plex Mono", monospace;
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(107,184,255,0.35);
+    white-space: nowrap;
+    pointer-events: auto;
+    transform: translate(-50%, -140%);
+  }
+  .measure3d-label button{
+    background: none;
+    border: none;
+    color: #6bb8ff;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 0 0 2px;
+    opacity: 0.7;
+  }
+  .measure3d-label button:hover{ opacity: 1; }
 
   #hint{
     margin-top:auto;
@@ -753,6 +782,16 @@
       <div id="threePointHint">Click <b>three points</b> on the model — the plane through them becomes the flat base.</div>
     </div>
 
+    <div class="section">
+      <div class="section-label">Measure</div>
+      <button class="action primary blue" id="btnMeasure3D" disabled>📏 Measure distance</button>
+      <div id="measure3DHint">Click two points on the model to measure the straight-line distance between them. Click <b>Measure distance</b> again to place another, independent measurement.</div>
+      <div id="measure3DControls" style="display:none;">
+        <div class="stat-row"><span>Measurements</span><span id="measure3DCount">0</span></div>
+        <button class="action" id="btnClearMeasure3D">Clear all</button>
+      </div>
+    </div>
+
     <div id="hint">
       <b>Drag</b> to orbit &nbsp; <b>Scroll</b> to zoom<br>
       <b>Shift+Drag</b> or <b>Right-drag</b> to pan
@@ -823,6 +862,17 @@
   renderer.localClippingEnabled = true;
   holder.appendChild(renderer.domElement);
   const canvas = renderer.domElement;
+
+  // CSS2DRenderer draws the billboarded measurement-distance labels — it
+  // renders real DOM elements positioned/projected to match the 3D scene,
+  // layered on top of the WebGL canvas in the same holder.
+  const css2dRenderer = new THREE.CSS2DRenderer();
+  css2dRenderer.domElement.style.position = 'absolute';
+  css2dRenderer.domElement.style.top = '0';
+  css2dRenderer.domElement.style.left = '0';
+  css2dRenderer.domElement.style.pointerEvents = 'none';
+  holder.style.position = 'relative';
+  holder.appendChild(css2dRenderer.domElement);
 
   // Base intensities for each light — the brightness slider scales these,
   // rather than being tracked as separate state, so "100%" always means
@@ -1014,6 +1064,65 @@
 
   const raycaster = new THREE.Raycaster();
 
+  // ---------- Shared BVH acceleration (three-mesh-bvh) ----------
+  // Installed once, globally. acceleratedRaycast() checks geometry.boundsTree
+  // and transparently falls back to the stock triangle walk when it's absent,
+  // so this patch doesn't change behavior for any mesh nothing has built a
+  // BVH for yet — the base-pick / 3-point-pick / plane-drag raycasts above
+  // keep working exactly as before.
+  THREE.Mesh.prototype.raycast = MeshBVHLib.acceleratedRaycast;
+  THREE.BufferGeometry.prototype.computeBoundsTree = MeshBVHLib.computeBoundsTree;
+  THREE.BufferGeometry.prototype.disposeBoundsTree = MeshBVHLib.disposeBoundsTree;
+
+  // Shared by every analysis tool (measurement here; deviation map and
+  // thickness map in later features) instead of each one building/walking
+  // its own acceleration structure.
+  const BVHUtils = {
+    // Lazily builds and caches a MeshBVH on the model's own geometry.
+    ensureBVH(model){
+      const geo = model.mesh.geometry;
+      if(!geo.boundsTree) geo.computeBoundsTree();
+      return geo.boundsTree;
+    },
+    disposeBVH(model){
+      const geo = model.mesh.geometry;
+      if(geo.boundsTree) geo.disposeBoundsTree();
+    },
+    // Nearest point on `bvh`'s mesh to a world-space `point`, or null.
+    closestSurfacePoint(bvh, point){
+      return bvh.closestPointToPoint(point, {}, 0, Infinity);
+    },
+    // First hit along a ray against `bvh`'s mesh, or null. `raycastFirst`
+    // doesn't take near/far bounds — callers that need to skip the origin
+    // triangle (e.g. an inward thickness ray) should offset `origin` by a
+    // small epsilon along `direction` before calling this.
+    castLocal(bvh, origin, direction){
+      const ray = new THREE.Ray(origin.clone(), direction.clone().normalize());
+      return bvh.raycastFirst(ray, THREE.DoubleSide);
+    },
+    // Runs work(i) for i in [0, n) in small batches, yielding to the event
+    // loop between batches (setTimeout 0) so the render loop never blocks
+    // for more than a single chunk — used by the per-point sampling loops
+    // in the deviation and thickness tools.
+    runChunked(n, chunkSize, work, onProgress, onDone){
+      let i = 0;
+      function step(){
+        const end = Math.min(i + chunkSize, n);
+        for(; i < end; i++) work(i);
+        if(onProgress) onProgress(i / n);
+        if(i < n) setTimeout(step, 0);
+        else if(onDone) onDone();
+      }
+      step();
+    }
+  };
+
+  // ---------- 3D point-to-point measurement state ----------
+  let measure3DArmed = false;
+  let measure3DPending = null; // { point, modelId, marker } — first point of an in-progress measurement
+  let measurements3D = []; // { id, dist, line, label }
+  let measure3DIdCounter = 0;
+
   // ---------- Manual orbit controls ----------
   // Camera orientation is tracked as a quaternion built from continuous,
   // incremental rotations — not recomputed each frame from absolute
@@ -1191,7 +1300,19 @@
       updateDrawOverlay(e.clientX, e.clientY, e.clientX, e.clientY);
       return;
     }
-    // 4) Dragging the existing cut plane
+    // 4) Placing a 3D point-to-point measurement point
+    if(measure3DArmed && isPrimaryClick){
+      const ndc = clientToNDC(e.clientX, e.clientY);
+      raycaster.setFromCamera(ndc, camera);
+      const meshList = models.map(m => m.mesh);
+      const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
+      if(hit){
+        const owner = models.find(m => m.mesh === hit.object);
+        if(owner) registerMeasurePoint(hit.point.clone(), owner.id);
+      }
+      return;
+    }
+    // 5) Dragging the existing cut plane
     if(planeMesh && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
@@ -1205,7 +1326,7 @@
         return;
       }
     }
-    // 5) Normal orbit / pan — reached directly (bypassing every tool above)
+    // 6) Normal orbit / pan — reached directly (bypassing every tool above)
     // whenever the middle or right mouse button is used, so you can always
     // reposition the view mid-task (e.g. scroll-wheel-press to orbit while
     // picking the 3 base points) without first backing out of the tool.
@@ -1268,6 +1389,7 @@
       if(sectionArmed){ setSectionArmed(false); isDrawingSection = false; hideDrawOverlay(); }
       if(baseArmed){ setBaseArmed(false); }
       if(threePointArmed){ setThreePointArmed(false); }
+      if(measure3DArmed){ setMeasure3DArmed(false); }
       if(typeof measurePoints !== 'undefined' && measurePoints.length){
         measurePoints = [];
         updateMeasureReadout();
@@ -1320,6 +1442,7 @@
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+    css2dRenderer.setSize(w, h);
     const overlay = document.getElementById('drawOverlay');
     overlay.setAttribute('width', w);
     overlay.setAttribute('height', h);
@@ -1856,6 +1979,7 @@
     document.getElementById('btnDrawSection').disabled = false;
     document.getElementById('btnPickBase').disabled = false;
     document.getElementById('btnPick3Point').disabled = false;
+    document.getElementById('btnMeasure3D').disabled = false;
 
     if(cutPlane) refreshSection(); // fold the newly added model into the live section
   }
@@ -1917,6 +2041,8 @@
     const idx = models.findIndex(m => m.id === id);
     if(idx === -1) return;
     const m = models[idx];
+    clearMeasurementsForModel(id);
+    BVHUtils.disposeBVH(m);
     scene.remove(m.group);
     m.mesh.geometry.dispose(); m.mesh.material.dispose();
     m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
@@ -1931,7 +2057,9 @@
       document.getElementById('btnDrawSection').disabled = true;
       document.getElementById('btnPickBase').disabled = true;
       document.getElementById('btnPick3Point').disabled = true;
+      document.getElementById('btnMeasure3D').disabled = true;
       setThreePointArmed(false);
+      setMeasure3DArmed(false);
       clearSection();
     } else if(cutPlane){
       refreshSection();
@@ -2200,6 +2328,133 @@
       reorientToFace(ownerModel, normal);
       setThreePointArmed(false);
     }
+  }
+
+  // ================= 3D MEASUREMENT TOOL =================
+  // Click-to-place, surface-snapped point-to-point measurement in the main
+  // 3D view. Snapping uses a BVH-accelerated raycast (BVHUtils) so the point
+  // always lands on the actual mesh surface, never a free-floating
+  // coordinate. Distance format/units/accent color match the existing 2D
+  // cross-section measure tool (mm, 2 decimals, #6bb8ff) for consistency.
+  // Multiple measurements can coexist; each is independently removable via
+  // the "x" on its billboarded CSS2D label.
+
+  function setMeasure3DArmed(on){
+    measure3DArmed = on;
+    const btn = document.getElementById('btnMeasure3D');
+    btn.classList.toggle('active', on);
+    canvas.classList.toggle('crosshair', on || sectionArmed || baseArmed || threePointArmed);
+    if(on){
+      // BVH-accelerate every loaded model up front so every placement
+      // (not just the first) benefits, not only the model that happens to
+      // get hit first.
+      models.forEach(m => BVHUtils.ensureBVH(m));
+    } else {
+      cancelPendingMeasurePoint();
+    }
+  }
+
+  document.getElementById('btnMeasure3D').addEventListener('click', () => {
+    if(!models.length) return;
+    setMeasure3DArmed(!measure3DArmed);
+  });
+  document.getElementById('btnClearMeasure3D').addEventListener('click', clearAllMeasurements);
+
+  function addMeasureMarker(point, modelId){
+    const geo = new THREE.SphereGeometry(Math.max(modelRadius * 0.015, 0.015), 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x6bb8ff, depthTest: false, transparent: true });
+    const marker = new THREE.Mesh(geo, mat);
+    marker.position.copy(point);
+    marker.renderOrder = 998;
+    marker.userData.modelId = modelId;
+    scene.add(marker);
+    return marker;
+  }
+
+  function cancelPendingMeasurePoint(){
+    if(!measure3DPending) return;
+    scene.remove(measure3DPending.marker);
+    measure3DPending.marker.geometry.dispose();
+    measure3DPending.marker.material.dispose();
+    measure3DPending = null;
+  }
+
+  function registerMeasurePoint(point, modelId){
+    if(!measure3DPending){
+      measure3DPending = { point, modelId, marker: addMeasureMarker(point, modelId) };
+      return;
+    }
+    const first = measure3DPending;
+    measure3DPending = null;
+    createMeasurement(first, { point, modelId, marker: addMeasureMarker(point, modelId) });
+  }
+
+  function createMeasurement(a, b){
+    const dist = a.point.distanceTo(b.point);
+
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([a.point, b.point]);
+    const lineMat = new THREE.LineDashedMaterial({
+      color: 0x6bb8ff, dashSize: 0.06, gapSize: 0.04, depthTest: false, transparent: true
+    });
+    const line = new THREE.Line(lineGeo, lineMat);
+    line.computeLineDistances();
+    line.renderOrder = 997;
+    scene.add(line);
+
+    const el = document.createElement('div');
+    el.className = 'measure3d-label';
+    const text = document.createElement('span');
+    text.textContent = dist.toFixed(2) + ' mm';
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.textContent = '×';
+    removeBtn.title = 'Remove measurement';
+    el.appendChild(text);
+    el.appendChild(removeBtn);
+
+    const label = new THREE.CSS2DObject(el);
+    const mid = new THREE.Vector3().addVectors(a.point, b.point).multiplyScalar(0.5);
+    label.position.copy(mid);
+    scene.add(label);
+
+    const id = ++measure3DIdCounter;
+    const measurement = { id, dist, line, label, markerA: a.marker, markerB: b.marker };
+    measurements3D.push(measurement);
+    removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeMeasurement(id); });
+    updateMeasure3DUI();
+  }
+
+  function removeMeasurement(id){
+    const idx = measurements3D.findIndex(m => m.id === id);
+    if(idx === -1) return;
+    const m = measurements3D[idx];
+    scene.remove(m.line); m.line.geometry.dispose(); m.line.material.dispose();
+    scene.remove(m.label);
+    scene.remove(m.markerA); m.markerA.geometry.dispose(); m.markerA.material.dispose();
+    scene.remove(m.markerB); m.markerB.geometry.dispose(); m.markerB.material.dispose();
+    measurements3D.splice(idx, 1);
+    updateMeasure3DUI();
+  }
+
+  function clearAllMeasurements(){
+    while(measurements3D.length) removeMeasurement(measurements3D[0].id);
+    cancelPendingMeasurePoint();
+  }
+
+  // Removes every measurement that references a model that's been removed
+  // from the scene (both its markers, since a measurement's two points can
+  // belong to different models).
+  function clearMeasurementsForModel(modelId){
+    [...measurements3D].forEach((m) => {
+      if(m.markerA.userData.modelId === modelId || m.markerB.userData.modelId === modelId){
+        removeMeasurement(m.id);
+      }
+    });
+  }
+
+  function updateMeasure3DUI(){
+    document.getElementById('measure3DControls').style.display = measurements3D.length ? 'block' : 'none';
+    document.getElementById('measure3DCount').textContent = String(measurements3D.length);
   }
 
   // ================= SECTION CUT TOOL =================
@@ -2952,6 +3207,7 @@
     }
     drawAxisIndicator();
     renderer.render(scene, camera);
+    css2dRenderer.render(scene, camera);
   }
   requestAnimationFrame(animate);
 })();
