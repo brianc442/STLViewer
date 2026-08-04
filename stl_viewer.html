@@ -2337,13 +2337,19 @@
     m.wireMesh.material.opacity = 0.35 * a;
     m.wireMesh.material.needsUpdate = true;
 
-    // The deviation overlay substitutes for the base mesh (hidden) while
-    // shown, so its material needs the same opacity — otherwise changing
-    // opacity while the tool is active appears to do nothing.
+    // The deviation/thickness overlays substitute for the base mesh
+    // (hidden) while shown, so their materials need the same opacity —
+    // otherwise changing opacity while a tool is active appears to do
+    // nothing.
     if(devResult && devResult.compareId === id){
       devResult.overlay.material.transparent = a < 1;
       devResult.overlay.material.opacity = a;
       devResult.overlay.material.needsUpdate = true;
+    }
+    if(thkResult && thkResult.modelId === id){
+      thkResult.overlay.material.transparent = a < 1;
+      thkResult.overlay.material.opacity = a;
+      thkResult.overlay.material.needsUpdate = true;
     }
   }
 
@@ -2958,9 +2964,11 @@
     // one flat color with no shading, making the surface's actual shape
     // unreadable. MeshPhongMaterial responds to the same scene lights as
     // the base mesh, so curvature/detail stays visible under the heatmap.
+    const thkA = model.opacity / 100;
     const mat = new THREE.MeshPhongMaterial({
       vertexColors: true, color: 0xffffff, flatShading: true,
-      specular: 0x111111, shininess: 18, side: THREE.DoubleSide
+      specular: 0x111111, shininess: 18, side: THREE.DoubleSide,
+      transparent: thkA < 1, opacity: thkA
     });
     const overlay = new THREE.Mesh(geo, mat);
     overlay.renderOrder = 5;
