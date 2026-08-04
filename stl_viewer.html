@@ -6,6 +6,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three-mesh-bvh@0.5.24/build/index.umd.cjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <style>
   :root{
     --bg: #0d1210;
@@ -450,7 +451,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #devHint{
+  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #undercutHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -460,7 +461,7 @@
   #baseHint b{ color: var(--base); font-weight: 500; }
   #threePointHint b{ color: var(--base); font-weight: 500; }
   #measure3DHint b{ color: var(--base); font-weight: 500; }
-  #devHint b{ color: var(--base); font-weight: 500; }
+  #undercutHint b{ color: #ff6b5c; font-weight: 500; }
 
   .measure3d-label{
     display: flex;
@@ -880,26 +881,21 @@
     </div>
 
     <div class="section">
-      <div class="section-label">Deviation Map</div>
-      <div class="side-select-row">
-        <label for="devBaseSelect">Base</label>
-        <select class="side-select" id="devBaseSelect"></select>
-      </div>
-      <div class="side-select-row">
-        <label for="devCompareSelect">Compare</label>
-        <select class="side-select" id="devCompareSelect"></select>
-      </div>
-      <button class="action primary blue" id="btnDevCompute" disabled style="margin-top:8px;">Compute deviation</button>
-      <div id="devHint">Signed distance from the <b>compare</b> mesh to the nearest point on the <b>base</b> mesh, colored as a heatmap. Meshes are used exactly as currently positioned — no alignment step.</div>
-      <div id="devProgressRow" style="display:none;">
-        <div class="progress-track"><div class="progress-fill" id="devProgressFill"></div></div>
-      </div>
-      <div id="devResultControls" style="display:none;">
-        <div class="toggle-row" style="padding-top:8px;">
-          <label for="tDevShow">Show overlay</label>
-          <div class="switch on" id="tDevShow"></div>
+      <div class="section-label">Undercut</div>
+      <button class="action primary blue" id="btnUndercut" disabled>⬒ Show undercuts</button>
+      <div id="undercutHint">Highlights faces that would be shadowed when withdrawing along the <b>insertion axis</b> (the arrow) — drag its rotation rings to orient it, or orbit the view down the intended path and click <b>Set axis from view</b>. Defaults to straight up.</div>
+      <div id="undercutControls" style="display:none;">
+        <div style="display:flex; gap:14px; margin-top:8px; font-size:11px; color:var(--ink-dim);">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#5c7268;margin-right:4px;"></span>Clear</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff6b5c;margin-right:4px;"></span>Undercut</span>
         </div>
-        <div id="devColorScaleHost"></div>
+        <div class="model-opacity-row" style="margin-top:8px;">
+          <span class="model-opacity-label">Tolerance</span>
+          <input type="range" class="model-opacity-slider" id="sUndercutTolerance" min="0" max="30" value="5">
+          <span class="model-opacity-value" id="undercutToleranceValue">5°</span>
+        </div>
+        <button class="action ghost" id="btnUndercutFromView" style="margin-top:8px;">Set axis from view</button>
+        <button class="action ghost" id="btnUndercutResetAxis" style="margin-top:6px;">Reset axis to vertical</button>
       </div>
     </div>
 
@@ -1174,6 +1170,15 @@
   let threePointMarkers = []; // visual THREE.Mesh dots for each pick
 
   const raycaster = new THREE.Raycaster();
+
+  // ---------- Undercut tool state ----------
+  let undercutActive = false;
+  let undercutTolerance = 5; // degrees
+  let undercutPivot = null;       // Object3D whose local +Y is the insertion axis
+  let undercutArrow = null;       // visual cone+cylinder, child of the pivot
+  let undercutControls = null;    // THREE.TransformControls, rotate-only
+  const undercutOverlays = new Map(); // modelId -> per-face-colored overlay THREE.Mesh
+  let undercutRecomputeQueued = false;
 
   // ---------- Shared BVH acceleration (three-mesh-bvh) ----------
   // Installed once, globally. acceleratedRaycast() checks geometry.boundsTree
@@ -1499,6 +1504,14 @@
     if(e.button === 1) e.preventDefault(); // stop the browser's native middle-click autoscroll
     const isPrimaryClick = e.button === 0;
 
+    // 0) The undercut axis gizmo owns this click if the pointer is over one
+    // of its rotation rings. `axis` is set by TransformControls' own
+    // pointermove hover handling, which always runs before a click on the
+    // same spot, so this check is reliable without racing its own
+    // pointerdown listener (also registered on `canvas`).
+    if(undercutActive && undercutControls && undercutControls.axis && isPrimaryClick){
+      return;
+    }
     // 1) Picking 3 points to define a custom flat base
     if(threePointArmed && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
@@ -2211,8 +2224,10 @@
     document.getElementById('btnPickBase').disabled = false;
     document.getElementById('btnPick3Point').disabled = false;
     document.getElementById('btnMeasure3D').disabled = false;
+    document.getElementById('btnUndercut').disabled = false;
 
     if(cutPlane) refreshSection(); // fold the newly added model into the live section
+    if(undercutActive) requestUndercutRecompute(); // fold the newly added model into the live overlay
   }
 
   // Every model shares the same X/Z spot at the origin — only its own
@@ -2272,6 +2287,7 @@
     const idx = models.findIndex(m => m.id === id);
     if(idx === -1) return;
     const m = models[idx];
+    disposeUndercutOverlay(id);
     clearMeasurementsForModel(id);
     BVHUtils.disposeBVH(m);
     if(devResult && (devResult.baseId === id || devResult.compareId === id)) disposeDeviationResult();
@@ -2290,8 +2306,10 @@
       document.getElementById('btnPickBase').disabled = true;
       document.getElementById('btnPick3Point').disabled = true;
       document.getElementById('btnMeasure3D').disabled = true;
+      document.getElementById('btnUndercut').disabled = true;
       setThreePointArmed(false);
       setMeasure3DArmed(false);
+      if(undercutActive) setUndercutActive(false);
       clearSection();
     } else if(cutPlane){
       refreshSection();
@@ -2310,13 +2328,14 @@
     m.wireMesh.material.opacity = 0.35 * a;
     m.wireMesh.material.needsUpdate = true;
 
-    // The deviation overlay substitutes for the base mesh (hidden) while
-    // shown, so its material needs the same opacity — otherwise changing
-    // opacity while the tool is active appears to do nothing.
-    if(devResult && devResult.compareId === id){
-      devResult.overlay.material.transparent = a < 1;
-      devResult.overlay.material.opacity = a;
-      devResult.overlay.material.needsUpdate = true;
+    // The undercut overlay substitutes for the base mesh (hidden) while
+    // active, so its material needs the same opacity — otherwise changing
+    // opacity while the tool is showing appears to do nothing.
+    const undercutOverlay = undercutOverlays.get(id);
+    if(undercutOverlay){
+      undercutOverlay.material.transparent = a < 1;
+      undercutOverlay.material.opacity = a;
+      undercutOverlay.material.needsUpdate = true;
     }
   }
 
@@ -2699,158 +2718,187 @@
     document.getElementById('measure3DCount').textContent = String(measurements3D.length);
   }
 
-  // ================= DEVIATION MAP TOOL =================
-  // Per-point (nearest-surface, via BVHUtils — not vertex-to-vertex) signed
-  // distance from the "compare" mesh's own vertices to the "base" mesh's
-  // surface. Meshes are used exactly as currently positioned in the scene —
-  // no alignment/registration step. The raw distance array is cached on
-  // devResult and only ever recolored (never re-queried against the BVH)
-  // when the shared ColorScale's range/mode changes.
+  // ================= UNDERCUT TOOL =================
+  // Purely visual/analytical — no BVH, no geometry mutation. For every
+  // loaded model, faces whose normal points away from the chosen insertion
+  // (withdrawal) axis beyond the tolerance angle are highlighted on a
+  // per-model colored overlay mesh (the source mesh is hidden underneath
+  // while its overlay is shown). The axis itself is a THREE.TransformControls
+  // gizmo, restricted to rotate-only, attached to a pivot whose local +Y is
+  // the axis direction; a visible arrow child shows the direction it's
+  // currently withdrawing along.
+  const UNDERCUT_SAFE_COLOR = new THREE.Color(0x5c7268);
+  const UNDERCUT_FLAG_COLOR = new THREE.Color(0xff6b5c);
 
-  function refreshDevModelSelects(){
-    const baseSel = document.getElementById('devBaseSelect');
-    const compareSel = document.getElementById('devCompareSelect');
-    const optsHtml = models.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
-    baseSel.innerHTML = optsHtml;
-    compareSel.innerHTML = optsHtml;
+  function createUndercutArrow(){
+    const group = new THREE.Group();
+    const shaftLen = 1, shaftRadius = 0.03, headLen = 0.28, headRadius = 0.09;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff6b5c, depthTest: false, transparent: true, opacity: 0.9 });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLen, 12), mat);
+    shaft.position.y = shaftLen / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(headRadius, headLen, 16), mat);
+    head.position.y = shaftLen + headLen / 2;
+    group.add(shaft, head);
+    group.renderOrder = 999;
+    return group;
+  }
 
-    if(!models.find(m => m.id === devBaseId)) devBaseId = models[0] ? models[0].id : null;
-    if(!models.find(m => m.id === devCompareId)){
-      devCompareId = (models[1] || models[0] || { id: null }).id;
+  function ensureUndercutSetup(){
+    if(undercutPivot) return;
+    undercutPivot = new THREE.Object3D();
+    undercutArrow = createUndercutArrow();
+    undercutPivot.add(undercutArrow);
+    undercutPivot.visible = false;
+    scene.add(undercutPivot);
+
+    undercutControls = new THREE.TransformControls(camera, canvas);
+    undercutControls.setMode('rotate');
+    undercutControls.setSize(1.1);
+    scene.add(undercutControls);
+    undercutControls.addEventListener('objectChange', requestUndercutRecompute);
+  }
+
+  function setUndercutActive(on){
+    if(on && !models.length) return;
+    ensureUndercutSetup();
+    undercutActive = on;
+    document.getElementById('btnUndercut').classList.toggle('active', on);
+    document.getElementById('undercutControls').style.display = on ? 'block' : 'none';
+
+    if(on){
+      const { min, max } = recomputeCombinedBounds();
+      undercutPivot.position.copy(min).add(max).multiplyScalar(0.5);
+      undercutArrow.scale.setScalar(Math.max(modelRadius, 0.5) * 0.9);
+      undercutPivot.visible = true;
+      undercutControls.attach(undercutPivot);
+      models.forEach((m) => { m.mesh.visible = false; });
+      recomputeUndercut();
+    } else {
+      undercutControls.detach();
+      undercutPivot.visible = false;
+      undercutOverlays.forEach((overlay) => { overlay.visible = false; });
+      models.forEach((m) => { m.mesh.visible = true; });
     }
-    if(devBaseId != null) baseSel.value = String(devBaseId);
-    if(devCompareId != null) compareSel.value = String(devCompareId);
-
-    document.getElementById('btnDevCompute').disabled = models.length < 2 || devBaseId === devCompareId;
   }
 
-  document.getElementById('devBaseSelect').addEventListener('change', (e) => {
-    devBaseId = Number(e.target.value);
-    document.getElementById('btnDevCompute').disabled = models.length < 2 || devBaseId === devCompareId;
+  document.getElementById('btnUndercut').addEventListener('click', () => {
+    if(!models.length) return;
+    setUndercutActive(!undercutActive);
   });
-  document.getElementById('devCompareSelect').addEventListener('change', (e) => {
-    devCompareId = Number(e.target.value);
-    document.getElementById('btnDevCompute').disabled = models.length < 2 || devBaseId === devCompareId;
+  document.getElementById('sUndercutTolerance').addEventListener('input', (e) => {
+    undercutTolerance = Number(e.target.value);
+    document.getElementById('undercutToleranceValue').textContent = undercutTolerance + '°';
+    requestUndercutRecompute();
   });
-  document.getElementById('btnDevCompute').addEventListener('click', computeDeviation);
-  document.getElementById('tDevShow').addEventListener('click', () => {
-    devShowOverlay = !devShowOverlay;
-    document.getElementById('tDevShow').classList.toggle('on', devShowOverlay);
-    if(devResult){
-      devResult.overlay.visible = devShowOverlay;
-      const compareModel = models.find(m => m.id === devResult.compareId);
-      if(compareModel) compareModel.mesh.visible = !devShowOverlay;
+  document.getElementById('btnUndercutFromView').addEventListener('click', () => {
+    if(!undercutPivot) return;
+    // Points from the orbit target toward the camera — i.e. "toward the
+    // viewer" — so orbiting down the intended insertion path and clicking
+    // this sets the axis to withdraw straight out of the screen, matching
+    // how the doctor is currently looking at it.
+    const viewAxis = new THREE.Vector3().subVectors(camera.position, target).normalize();
+    undercutPivot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), viewAxis);
+    requestUndercutRecompute();
+  });
+  document.getElementById('btnUndercutResetAxis').addEventListener('click', () => {
+    if(!undercutPivot) return;
+    undercutPivot.quaternion.identity();
+    requestUndercutRecompute();
+  });
+
+  // Coalesces bursts of 'objectChange' events (fired continuously while
+  // dragging the gizmo) down to at most one recompute per rendered frame.
+  function requestUndercutRecompute(){
+    if(undercutRecomputeQueued) return;
+    undercutRecomputeQueued = true;
+    requestAnimationFrame(() => {
+      undercutRecomputeQueued = false;
+      if(undercutActive) recomputeUndercut();
+    });
+  }
+
+  function recomputeUndercut(){
+    if(!undercutActive || !undercutPivot) return;
+    const worldAxis = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(undercutPivot.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const sinTol = Math.sin(undercutTolerance * Math.PI / 180);
+    models.forEach((model) => updateUndercutOverlay(model, worldAxis, sinTol));
+  }
+
+  function updateUndercutOverlay(model, worldAxis, sinTol){
+    let overlay = undercutOverlays.get(model.id);
+    if(!overlay){
+      const geo = model.mesh.geometry.clone();
+      geo.deleteAttribute('color'); // don't inherit the source model's own file-provided vertex colors
+      // MeshBasicMaterial is unlit — every "safe" face would render as one
+      // flat color with no shading, making the model's actual shape
+      // unreadable. MeshPhongMaterial responds to the same scene lights as
+      // the base mesh, so curvature/detail stays visible under the tint.
+      const a = model.opacity / 100;
+      const mat = new THREE.MeshPhongMaterial({
+        vertexColors: true, color: 0xffffff, flatShading: true,
+        specular: 0x111111, shininess: 18, side: THREE.DoubleSide,
+        transparent: a < 1, opacity: a
+      });
+      overlay = new THREE.Mesh(geo, mat);
+      overlay.renderOrder = 5;
+      overlay.position.copy(model.mesh.position);
+      overlay.quaternion.copy(model.mesh.quaternion);
+      overlay.scale.copy(model.mesh.scale);
+      model.group.add(overlay);
+      undercutOverlays.set(model.id, overlay);
     }
-  });
+    overlay.visible = true;
 
-  function computeDeviation(){
-    const baseModel = models.find(m => m.id === devBaseId);
-    const compareModel = models.find(m => m.id === devCompareId);
-    if(!baseModel || !compareModel || baseModel === compareModel) return;
+    const posAttr = overlay.geometry.attributes.position;
+    let colorAttr = overlay.geometry.attributes.color;
+    if(!colorAttr){
+      colorAttr = new THREE.BufferAttribute(new Float32Array(posAttr.count * 3), 3);
+      overlay.geometry.setAttribute('color', colorAttr);
+    }
 
-    disposeDeviationResult();
-    const baseBVH = BVHUtils.ensureBVH(baseModel);
+    // Face normals below are computed directly from this LOCAL-space
+    // geometry (non-indexed triangle-soup — one unique vertex triple per
+    // face), so the world-space withdrawal axis needs to be rotated into
+    // that same local space to compare against them.
+    const worldQuat = new THREE.Quaternion();
+    model.mesh.getWorldQuaternion(worldQuat);
+    const localAxis = worldAxis.clone().applyQuaternion(worldQuat.invert()).normalize();
 
-    const geo = compareModel.mesh.geometry;
-    const posAttr = geo.attributes.position;
-    const normAttr = geo.attributes.normal;
-    const vertCount = posAttr.count;
-    const raw = new Float32Array(vertCount);
-
-    // Combined transform taking a point/direction from the compare mesh's
-    // LOCAL space directly into the base mesh's LOCAL space, so the BVH
-    // query (which operates in the base geometry's own local coordinates)
-    // and the sign check below both happen in one consistent frame.
-    const compareToBase = new THREE.Matrix4()
-      .copy(baseModel.mesh.matrixWorld).invert()
-      .multiply(compareModel.mesh.matrixWorld);
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(compareToBase);
-
-    const p = new THREE.Vector3(), n = new THREE.Vector3(), diff = new THREE.Vector3();
-
-    document.getElementById('devProgressRow').style.display = 'block';
-    document.getElementById('devProgressFill').style.width = '0%';
-    document.getElementById('btnDevCompute').disabled = true;
-
-    BVHUtils.runChunked(vertCount, 2000, (i) => {
-      p.fromBufferAttribute(posAttr, i).applyMatrix4(compareToBase);
-      n.fromBufferAttribute(normAttr, i).applyMatrix3(normalMatrix).normalize();
-      const hit = BVHUtils.closestSurfacePoint(baseBVH, p);
-      if(!hit){ raw[i] = 0; return; }
-      diff.subVectors(p, hit.point);
-      // Stored in µm (scene units are mm) — matches how deviation is
-      // conventionally read in dental CAD, and the color-scale's default
-      // range below.
-      raw[i] = (diff.dot(n) >= 0 ? 1 : -1) * hit.distance * 1000;
-    }, (frac) => {
-      document.getElementById('devProgressFill').style.width = (frac * 100).toFixed(0) + '%';
-    }, () => {
-      finishDeviationCompute(compareModel, baseModel, raw);
-    });
-  }
-
-  function finishDeviationCompute(compareModel, baseModel, raw){
-    document.getElementById('devProgressRow').style.display = 'none';
-    document.getElementById('btnDevCompute').disabled = false;
-
-    const geo = compareModel.mesh.geometry.clone();
-    geo.deleteAttribute('color'); // don't inherit the compare model's own file-provided vertex colors
-    const colorAttr = new THREE.BufferAttribute(new Float32Array(raw.length * 3), 3);
-    geo.setAttribute('color', colorAttr);
-    // MeshBasicMaterial is unlit — every same-valued region would render as
-    // one flat color with no shading, making the surface's actual shape
-    // unreadable. MeshPhongMaterial responds to the same scene lights as
-    // the base mesh, so curvature/detail stays visible under the heatmap.
-    const devA = compareModel.opacity / 100;
-    const mat = new THREE.MeshPhongMaterial({
-      vertexColors: true, color: 0xffffff, flatShading: true,
-      specular: 0x111111, shininess: 18, side: THREE.DoubleSide,
-      transparent: devA < 1, opacity: devA
-    });
-    const overlay = new THREE.Mesh(geo, mat);
-    overlay.renderOrder = 5;
-    overlay.position.copy(compareModel.mesh.position);
-    overlay.quaternion.copy(compareModel.mesh.quaternion);
-    overlay.scale.copy(compareModel.mesh.scale);
-    compareModel.group.add(overlay);
-
-    const hostEl = document.getElementById('devColorScaleHost');
-    hostEl.innerHTML = '';
-    const colorScale = createColorScale(hostEl, {
-      unit: 'µm', step: 5, min: -100, max: 300, threshLo: 0, threshHi: 100, mode: 'gradient',
-      onChange: () => recolorDeviationOverlay()
-    });
-
-    devResult = { compareId: compareModel.id, baseId: baseModel.id, raw, overlay, colorScale };
-    compareModel.mesh.visible = !devShowOverlay;
-    overlay.visible = devShowOverlay;
-
-    document.getElementById('devResultControls').style.display = 'block';
-    recolorDeviationOverlay();
-  }
-
-  function recolorDeviationOverlay(){
-    if(!devResult) return;
-    const colorAttr = devResult.overlay.geometry.attributes.color;
     const arr = colorAttr.array;
-    for(let i = 0; i < devResult.raw.length; i++){
-      const c = devResult.colorScale.colorForValue(devResult.raw[i]);
-      const o = i * 3;
-      arr[o] = c.r; arr[o + 1] = c.g; arr[o + 2] = c.b;
+    const pa = posAttr.array;
+    const triCount = posAttr.count / 3;
+    const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+    for(let t = 0; t < triCount; t++){
+      const i0 = t * 9;
+      vA.set(pa[i0], pa[i0 + 1], pa[i0 + 2]);
+      vB.set(pa[i0 + 3], pa[i0 + 4], pa[i0 + 5]);
+      vC.set(pa[i0 + 6], pa[i0 + 7], pa[i0 + 8]);
+      e1.subVectors(vB, vA);
+      e2.subVectors(vC, vA);
+      n.crossVectors(e1, e2).normalize();
+      // Undercut when the face normal points more than (90 + tolerance)
+      // degrees away from the withdrawal axis, i.e. the surface would be
+      // shadowed while pulling out along that axis. cos(90+tol) = -sin(tol).
+      const isUndercut = n.dot(localAxis) < -sinTol;
+      const c = isUndercut ? UNDERCUT_FLAG_COLOR : UNDERCUT_SAFE_COLOR;
+      for(let v = 0; v < 3; v++){
+        const o = i0 + v * 3;
+        arr[o] = c.r; arr[o + 1] = c.g; arr[o + 2] = c.b;
+      }
     }
     colorAttr.needsUpdate = true;
   }
 
-  function disposeDeviationResult(){
-    if(!devResult) return;
-    const compareModel = models.find(m => m.id === devResult.compareId);
-    if(compareModel) compareModel.mesh.visible = true;
-    if(devResult.overlay.parent) devResult.overlay.parent.remove(devResult.overlay);
-    devResult.overlay.geometry.dispose();
-    devResult.overlay.material.dispose();
-    devResult = null;
-    document.getElementById('devResultControls').style.display = 'none';
-    document.getElementById('devColorScaleHost').innerHTML = '';
+  function disposeUndercutOverlay(modelId){
+    const overlay = undercutOverlays.get(modelId);
+    if(!overlay) return;
+    if(overlay.parent) overlay.parent.remove(overlay);
+    overlay.geometry.dispose();
+    overlay.material.dispose();
+    undercutOverlays.delete(modelId);
   }
 
   // ================= SECTION CUT TOOL =================
