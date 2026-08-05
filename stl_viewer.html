@@ -133,6 +133,51 @@
     align-items:center;
     justify-content:space-between;
   }
+  .section-label.section-toggle{
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0;
+  }
+  .section-label.section-toggle:hover{
+    color: var(--accent-dim);
+  }
+  .section-chevron{
+    display: inline-block;
+    font-size: 9px;
+    line-height: 1;
+    color: var(--ink-dim);
+    transition: transform .18s ease;
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
+  .section.open .section-label.section-toggle .section-chevron{
+    transform: rotate(90deg);
+  }
+  .section-body{
+    display: none;
+    margin-top: 10px;
+  }
+  .section.open .section-body{
+    display: block;
+  }
+  .subsection{
+    padding-top: 14px;
+    margin-top: 14px;
+    border-top: 1px solid var(--panel-line);
+  }
+  .subsection:first-child{
+    padding-top: 0;
+    margin-top: 0;
+    border-top: none;
+  }
+  .subsection-label{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin: 0 0 8px 0;
+  }
 
   #dropzone{
     border: 1px dashed var(--panel-line);
@@ -411,8 +456,59 @@
     display:flex; align-items:center; justify-content:space-between;
     padding: 8px 0;
     font-size: 13px;
+    position: relative;
   }
   .toggle-row label{ cursor:pointer; }
+  .toggle-label-with-info{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .info-icon{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--ink-dim);
+    color: var(--ink-dim);
+    font-size: 10px;
+    font-family: var(--sans);
+    line-height: 1;
+    cursor: help;
+    flex-shrink: 0;
+  }
+  .info-icon:hover, .info-icon:focus{
+    border-color: var(--accent);
+    color: var(--accent);
+    outline: none;
+  }
+  .info-tooltip{
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 26px;
+    z-index: 50;
+    width: 220px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.5;
+    font-family: var(--sans);
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--ink-dim);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    cursor: default;
+  }
+  .info-icon:hover .info-tooltip,
+  .info-icon:focus .info-tooltip{
+    display: block;
+  }
   .switch{
     position:relative; width: 34px; height: 18px;
     background: #1c2622; border:1px solid var(--panel-line);
@@ -805,216 +901,239 @@
       <p>Load a mesh to inspect it in three dimensions.</p>
     </div>
 
-    <div class="section">
-      <div class="section-label">Source Files</div>
-      <div id="dropzone">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
-          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
-        </svg>
-        <div>Drop .stl, .obj, or .ply files here<br>or click to browse — add as many as you like</div>
-      </div>
-      <input type="file" id="fileInput" accept=".stl,.obj,.ply" multiple>
-      <div class="toggle-row" style="margin-top:10px;">
-        <label for="tPreserveAlignment">Keep original alignment</label>
-        <div class="switch" id="tPreserveAlignment"></div>
-      </div>
-      <div id="preserveAlignmentHint" style="font-size:11px; color:var(--ink-dim); line-height:1.4; margin-top:4px;">
-        Loads files exactly as authored, with no auto-centering or auto-orientation — use this for scans that already share one coordinate system (e.g. matched upper/lower jaw exports, or a scan plus its temp restoration) so they stay correctly positioned relative to each other. This turns on automatically whenever you select or drop more than one file at once; turn it on here first if you're adding files to an already-aligned set one at a time. Single files loaded individually are still auto-centered and auto-oriented by default, which is usually better for inspecting one file on its own.
-      </div>
-    </div>
-
-    <div class="section" id="modelsSection" style="display:none;">
-      <div class="section-label">Loaded Models <span id="modelSummary"></span></div>
-      <div id="modelList"></div>
-    </div>
-
-    <div class="section">
-      <div class="section-label">Display</div>
-      <div class="toggle-row">
-        <label for="tWire">Wireframe</label>
-        <div class="switch" id="tWire"></div>
-      </div>
-      <div class="toggle-row">
-        <label for="tGrid">Ground grid</label>
-        <div class="switch" id="tGrid"></div>
-      </div>
-      <div class="toggle-row">
-        <label for="tSpin">Auto-rotate</label>
-        <div class="switch" id="tSpin"></div>
-      </div>
-      <div class="toggle-row">
-        <label for="tTheme">Light mode</label>
-        <div class="switch" id="tTheme"></div>
-      </div>
-      <div class="model-opacity-row" style="margin-top:10px;">
-        <span class="model-opacity-label">Brightness</span>
-        <input type="range" class="model-opacity-slider" id="sBrightness" min="20" max="150" value="50">
-        <span class="model-opacity-value" id="brightnessValue">50%</span>
-      </div>
-      <div class="model-opacity-row" style="margin-top:8px;">
-        <span class="model-opacity-label">Gray</span>
-        <input type="range" class="model-opacity-slider" id="sModelColor" min="0" max="100" value="0">
-        <span class="model-opacity-label" style="text-align:right;">Beige</span>
-      </div>
-      <div class="model-opacity-row" style="margin-top:8px;">
-        <span class="model-opacity-label">Matte</span>
-        <input type="range" class="model-opacity-slider" id="sMatte" min="0" max="100" value="0">
-        <span class="model-opacity-value" id="matteValue">0%</span>
-      </div>
-      <div class="model-opacity-row" style="margin-top:6px;">
-        <span class="model-opacity-label">Shiny</span>
-        <input type="range" class="model-opacity-slider" id="sShiny" min="0" max="100" value="0">
-        <span class="model-opacity-value" id="shinyValue">0%</span>
-      </div>
-      <div class="model-opacity-row" style="margin-top:8px;">
-        <span class="model-opacity-label">FOV</span>
-        <input type="range" class="model-opacity-slider" id="sFov" min="15" max="100" value="15">
-        <span class="model-opacity-value" id="fovValue">15°</span>
-      </div>
-      <button class="action" id="btnReset">Reset view</button>
-    </div>
-
-    <div class="section">
-      <div class="section-label">Section Cut</div>
-      <button class="action primary" id="btnDrawSection" disabled>◈ Draw section line</button>
-      <div id="sectionHint">Draw a line across the model to slice it. The <b>outline</b> is traced live — both in 3D and in the 2D cross-section window — and you can drag the cut plane in the viewport to slide it through the model.</div>
-
-      <div id="sectionControls" style="display:none;">
-        <div class="toggle-row">
-          <label for="tClip">Clip solid</label>
-          <div class="switch" id="tClip"></div>
+    <div class="section open" id="secSourceFiles">
+      <div class="section-label section-toggle"><span>Source Files</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <div id="dropzone">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M12 3v12M12 3l-4 4M12 3l4 4"/>
+            <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+          </svg>
+          <div>Drop .stl, .obj, or .ply files here<br>or click to browse — add as many as you like</div>
         </div>
-        <button class="action ghost" id="btnFlipClip" style="display:none;">Flip clip side</button>
-        <div class="stat-row"><span>Outline segments</span><span id="statSegs">—</span></div>
-        <button class="action" id="btnClearSection">Clear section</button>
+        <input type="file" id="fileInput" accept=".stl,.obj,.ply" multiple>
+        <div class="toggle-row" style="margin-top:10px;">
+          <span class="toggle-label-with-info">
+            <label for="tPreserveAlignment">Keep original alignment</label>
+            <span class="info-icon" tabindex="0">i
+              <span class="info-tooltip">Loads files exactly as authored, with no auto-centering or auto-orientation — use this for scans that already share one coordinate system (e.g. matched upper/lower jaw exports, or a scan plus its temp restoration) so they stay correctly positioned relative to each other. This turns on automatically whenever you select or drop more than one file at once; turn it on here first if you're adding files to an already-aligned set one at a time. Single files loaded individually are still auto-centered and auto-oriented by default, which is usually better for inspecting one file on its own.</span>
+            </span>
+          </span>
+          <div class="switch" id="tPreserveAlignment"></div>
+        </div>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Reorient</div>
-      <button class="action primary blue" id="btnPickBase" disabled>⌗ Pick flat base</button>
-      <div id="baseHint">Click any face on the model and it becomes the <b>flat base</b> — the model rotates so that surface sits flush on the ground grid.</div>
-      <button class="action primary blue" id="btnPick3Point" disabled style="margin-top:8px;">△ Pick 3-point base</button>
-      <div id="threePointHint">Click <b>three points</b> on the model — the plane through them becomes the flat base.</div>
+    <div class="section open" id="modelsSection" style="display:none;">
+      <div class="section-label section-toggle"><span>Loaded Models <span id="modelSummary"></span></span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <div id="modelList"></div>
+      </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Prep Margin</div>
-      <button class="action primary pink" id="btnMarkMargin" disabled>◇ Mark margin</button>
-      <div id="marginHint">Click along the prep to place margin points. Drag a point to move it, or <b>Shift+click</b> a point to remove it. Enter the tooth's FDI number before saving — it's needed to name the file the way exocad expects.</div>
-
-      <div id="marginControls" style="display:none;">
+    <div class="section" id="secDisplay">
+      <div class="section-label section-toggle"><span>Display</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
         <div class="toggle-row">
-          <label for="tMarginSnap">Snap to surface</label>
-          <div class="switch on" id="tMarginSnap"></div>
+          <label for="tWire">Wireframe</label>
+          <div class="switch" id="tWire"></div>
         </div>
         <div class="toggle-row">
-          <label for="tMarginClosed">Close loop</label>
-          <div class="switch" id="tMarginClosed"></div>
+          <label for="tGrid">Ground grid</label>
+          <div class="switch" id="tGrid"></div>
         </div>
         <div class="toggle-row">
-          <label for="tMarginPoints">Show points</label>
-          <div class="switch on" id="tMarginPoints"></div>
+          <label for="tSpin">Auto-rotate</label>
+          <div class="switch" id="tSpin"></div>
+        </div>
+        <div class="toggle-row">
+          <label for="tTheme">Light mode</label>
+          <div class="switch" id="tTheme"></div>
+        </div>
+        <div class="model-opacity-row" style="margin-top:10px;">
+          <span class="model-opacity-label">Brightness</span>
+          <input type="range" class="model-opacity-slider" id="sBrightness" min="20" max="150" value="50">
+          <span class="model-opacity-value" id="brightnessValue">50%</span>
         </div>
         <div class="model-opacity-row" style="margin-top:8px;">
-          <span class="model-opacity-label">Offset</span>
-          <input type="range" class="model-opacity-slider" id="sMarginOffset" min="-100" max="100" value="0">
-          <span class="model-opacity-value" id="marginOffsetValue">0.00</span>
+          <span class="model-opacity-label">Gray</span>
+          <input type="range" class="model-opacity-slider" id="sModelColor" min="0" max="100" value="0">
+          <span class="model-opacity-label" style="text-align:right;">Beige</span>
         </div>
         <div class="model-opacity-row" style="margin-top:8px;">
-          <span class="model-opacity-label">Project name</span>
-          <input type="text" id="marginProjectName" placeholder="exocad project name"
-            style="flex:1; min-width:0; background:transparent; border:1px solid var(--panel-line); border-radius:3px;
-                   color:var(--ink); font-family:var(--mono); font-size:12px; padding:4px 6px;">
+          <span class="model-opacity-label">Matte</span>
+          <input type="range" class="model-opacity-slider" id="sMatte" min="0" max="100" value="0">
+          <span class="model-opacity-value" id="matteValue">0%</span>
+        </div>
+        <div class="model-opacity-row" style="margin-top:6px;">
+          <span class="model-opacity-label">Shiny</span>
+          <input type="range" class="model-opacity-slider" id="sShiny" min="0" max="100" value="0">
+          <span class="model-opacity-value" id="shinyValue">0%</span>
         </div>
         <div class="model-opacity-row" style="margin-top:8px;">
-          <span class="model-opacity-label">Tooth # (FDI)</span>
-          <input type="text" id="marginToothNumber" placeholder="e.g. 16" maxlength="2"
-            style="width:56px; background:transparent; border:1px solid var(--panel-line); border-radius:3px;
-                   color:var(--ink); font-family:var(--mono); font-size:12px; padding:4px 6px; text-align:center;">
+          <span class="model-opacity-label">FOV</span>
+          <input type="range" class="model-opacity-slider" id="sFov" min="15" max="100" value="15">
+          <span class="model-opacity-value" id="fovValue">15°</span>
         </div>
-        <div style="display:flex; gap:6px; margin-top:8px;">
-          <button class="action ghost" id="btnMarginUndo" style="margin-top:0; border:1px solid var(--panel-line);">↶ Undo</button>
-          <button class="action ghost" id="btnMarginRedo" style="margin-top:0; border:1px solid var(--panel-line);">↷ Redo</button>
-        </div>
-        <button class="action" id="btnMarginClear">Clear points</button>
-        <button class="action primary pink" id="btnMarginSave">✓ Save margin (<span id="marginPointCount">0</span> pts)</button>
-      </div>
-
-      <div id="marginList"></div>
-    </div>
-
-    <div class="section">
-      <div class="section-label">Measure</div>
-      <button class="action primary blue" id="btnMeasure3D" disabled>📏 Measure distance</button>
-      <div id="measure3DHint">Click two points on the model to measure the straight-line distance between them. Click <b>Measure distance</b> again to place another, independent measurement.</div>
-      <div id="measure3DControls" style="display:none;">
-        <div class="stat-row"><span>Measurements</span><span id="measure3DCount">0</span></div>
-        <button class="action" id="btnClearMeasure3D">Clear all</button>
+        <button class="action" id="btnReset">Reset view</button>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Undercut</div>
-      <button class="action primary blue" id="btnUndercut" disabled>⬒ Show undercuts</button>
-      <div id="undercutHint">Highlights faces that would be shadowed when withdrawing along the <b>insertion axis</b> (the arrow) — drag its rotation rings to orient it, or orbit the view down the intended path and click <b>Set axis from view</b>. Defaults to straight up.</div>
-      <div id="undercutControls" style="display:none;">
-        <div style="display:flex; gap:14px; margin-top:8px; font-size:11px; color:var(--ink-dim);">
-          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#5c7268;margin-right:4px;"></span>Clear</span>
-          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff6b5c;margin-right:4px;"></span>Undercut</span>
+    <div class="section" id="secSectionCut">
+      <div class="section-label section-toggle"><span>Section Cut</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <button class="action primary" id="btnDrawSection" disabled>◈ Draw section line</button>
+        <div id="sectionHint">Draw a line across the model to slice it. The <b>outline</b> is traced live — both in 3D and in the 2D cross-section window — and you can drag the cut plane in the viewport to slide it through the model.</div>
+
+        <div id="sectionControls" style="display:none;">
+          <div class="toggle-row">
+            <label for="tClip">Clip solid</label>
+            <div class="switch" id="tClip"></div>
+          </div>
+          <button class="action ghost" id="btnFlipClip" style="display:none;">Flip clip side</button>
+          <div class="stat-row"><span>Outline segments</span><span id="statSegs">—</span></div>
+          <button class="action" id="btnClearSection">Clear section</button>
         </div>
-        <div class="model-opacity-row" style="margin-top:8px;">
-          <span class="model-opacity-label">Tolerance</span>
-          <input type="range" class="model-opacity-slider" id="sUndercutTolerance" min="0" max="30" value="5">
-          <span class="model-opacity-value" id="undercutToleranceValue">5°</span>
-        </div>
-        <button class="action ghost" id="btnUndercutFromView" style="margin-top:8px;">Set axis from view</button>
-        <button class="action ghost" id="btnUndercutResetAxis" style="margin-top:6px;">Reset axis to vertical</button>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Deviation Map</div>
-      <div class="side-select-row">
-        <label for="devBaseSelect">Base</label>
-        <select class="side-select" id="devBaseSelect"></select>
-      </div>
-      <div class="side-select-row">
-        <label for="devCompareSelect">Compare</label>
-        <select class="side-select" id="devCompareSelect"></select>
-      </div>
-      <button class="action primary blue" id="btnDevCompute" disabled style="margin-top:8px;">Compute deviation</button>
-      <div id="devHint">Signed distance from the <b>compare</b> mesh to the nearest point on the <b>base</b> mesh, colored as a heatmap. Meshes are used exactly as currently positioned — no alignment step.</div>
-      <div id="devProgressRow" style="display:none;">
-        <div class="progress-track"><div class="progress-fill" id="devProgressFill"></div></div>
-      </div>
-      <div id="devResultControls" style="display:none;">
-        <div class="toggle-row" style="padding-top:8px;">
-          <label for="tDevShow">Show overlay</label>
-          <div class="switch on" id="tDevShow"></div>
-        </div>
-        <div id="devColorScaleHost"></div>
+    <div class="section" id="secReorient">
+      <div class="section-label section-toggle"><span>Reorient</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <button class="action primary blue" id="btnPickBase" disabled>⌗ Pick flat base</button>
+        <div id="baseHint">Click any face on the model and it becomes the <b>flat base</b> — the model rotates so that surface sits flush on the ground grid.</div>
+        <button class="action primary blue" id="btnPick3Point" disabled style="margin-top:8px;">△ Pick 3-point base</button>
+        <div id="threePointHint">Click <b>three points</b> on the model — the plane through them becomes the flat base.</div>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Thickness Map</div>
-      <div class="side-select-row">
-        <label for="thkModelSelect">Model</label>
-        <select class="side-select" id="thkModelSelect"></select>
-      </div>
-      <button class="action primary blue" id="btnThkCompute" disabled style="margin-top:8px;">Compute thickness</button>
-      <div id="thkHint">Self-referential wall thickness: casts an inward ray from each surface point to the nearest opposing internal surface. Works best on a closed (watertight) mesh.</div>
-      <div id="thkProgressRow" style="display:none;">
-        <div class="progress-track"><div class="progress-fill" id="thkProgressFill"></div></div>
-      </div>
-      <div id="thkResultControls" style="display:none;">
-        <div class="toggle-row" style="padding-top:8px;">
-          <label for="tThkShow">Show overlay</label>
-          <div class="switch on" id="tThkShow"></div>
+    <div class="section" id="secPrepMargin">
+      <div class="section-label section-toggle"><span>Margin Selection</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <button class="action primary pink" id="btnMarkMargin" disabled>◇ Mark margin</button>
+        <div id="marginHint">Click along the prep to place margin points. Drag a point to move it, or <b>Shift+click</b> a point to remove it. Enter the tooth's FDI number before saving — it's needed to name the file the way exocad expects.</div>
+
+        <div id="marginControls" style="display:none;">
+          <div class="toggle-row">
+            <label for="tMarginSnap">Snap to surface</label>
+            <div class="switch on" id="tMarginSnap"></div>
+          </div>
+          <div class="toggle-row">
+            <label for="tMarginClosed">Close loop</label>
+            <div class="switch" id="tMarginClosed"></div>
+          </div>
+          <div class="toggle-row">
+            <label for="tMarginPoints">Show points</label>
+            <div class="switch on" id="tMarginPoints"></div>
+          </div>
+          <div class="model-opacity-row" style="margin-top:8px;">
+            <span class="model-opacity-label">Offset</span>
+            <input type="range" class="model-opacity-slider" id="sMarginOffset" min="-100" max="100" value="0">
+            <span class="model-opacity-value" id="marginOffsetValue">0.00</span>
+          </div>
+          <div class="model-opacity-row" style="margin-top:8px;">
+            <span class="model-opacity-label">Project name</span>
+            <input type="text" id="marginProjectName" placeholder="exocad project name"
+              style="flex:1; min-width:0; background:transparent; border:1px solid var(--panel-line); border-radius:3px;
+                     color:var(--ink); font-family:var(--mono); font-size:12px; padding:4px 6px;">
+          </div>
+          <div class="model-opacity-row" style="margin-top:8px;">
+            <span class="model-opacity-label">Tooth # (FDI)</span>
+            <input type="text" id="marginToothNumber" placeholder="e.g. 16" maxlength="2"
+              style="width:56px; background:transparent; border:1px solid var(--panel-line); border-radius:3px;
+                     color:var(--ink); font-family:var(--mono); font-size:12px; padding:4px 6px; text-align:center;">
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <button class="action ghost" id="btnMarginUndo" style="margin-top:0; border:1px solid var(--panel-line);">↶ Undo</button>
+            <button class="action ghost" id="btnMarginRedo" style="margin-top:0; border:1px solid var(--panel-line);">↷ Redo</button>
+          </div>
+          <button class="action" id="btnMarginClear">Clear points</button>
+          <button class="action primary pink" id="btnMarginSave">✓ Save margin (<span id="marginPointCount">0</span> pts)</button>
         </div>
-        <div id="thkColorScaleHost"></div>
+
+        <div id="marginList"></div>
+      </div>
+    </div>
+
+    <div class="section" id="secMeasure">
+      <div class="section-label section-toggle"><span>Measure</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <button class="action primary blue" id="btnMeasure3D" disabled>📏 Measure distance</button>
+        <div id="measure3DHint">Click two points on the model to measure the straight-line distance between them. Click <b>Measure distance</b> again to place another, independent measurement.</div>
+        <div id="measure3DControls" style="display:none;">
+          <div class="stat-row"><span>Measurements</span><span id="measure3DCount">0</span></div>
+          <button class="action" id="btnClearMeasure3D">Clear all</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="secUndercut">
+      <div class="section-label section-toggle"><span>Undercut</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <button class="action primary blue" id="btnUndercut" disabled>⬒ Show undercuts</button>
+        <div id="undercutHint">Highlights faces that would be shadowed when withdrawing along the <b>insertion axis</b> (the arrow) — drag its rotation rings to orient it, or orbit the view down the intended path and click <b>Set axis from view</b>. Defaults to straight up.</div>
+        <div id="undercutControls" style="display:none;">
+          <div style="display:flex; gap:14px; margin-top:8px; font-size:11px; color:var(--ink-dim);">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#5c7268;margin-right:4px;"></span>Clear</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ff6b5c;margin-right:4px;"></span>Undercut</span>
+          </div>
+          <div class="model-opacity-row" style="margin-top:8px;">
+            <span class="model-opacity-label">Tolerance</span>
+            <input type="range" class="model-opacity-slider" id="sUndercutTolerance" min="0" max="30" value="5">
+            <span class="model-opacity-value" id="undercutToleranceValue">5°</span>
+          </div>
+          <button class="action ghost" id="btnUndercutFromView" style="margin-top:8px;">Set axis from view</button>
+          <button class="action ghost" id="btnUndercutResetAxis" style="margin-top:6px;">Reset axis to vertical</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="secMapping">
+      <div class="section-label section-toggle"><span>Mapping</span><span class="section-chevron">▸</span></div>
+      <div class="section-body">
+        <div class="subsection">
+          <div class="subsection-label">Deviation Map</div>
+          <div class="side-select-row">
+            <label for="devBaseSelect">Base</label>
+            <select class="side-select" id="devBaseSelect"></select>
+          </div>
+          <div class="side-select-row">
+            <label for="devCompareSelect">Compare</label>
+            <select class="side-select" id="devCompareSelect"></select>
+          </div>
+          <button class="action primary blue" id="btnDevCompute" disabled style="margin-top:8px;">Compute deviation</button>
+          <div id="devHint">Signed distance from the <b>compare</b> mesh to the nearest point on the <b>base</b> mesh, colored as a heatmap. Meshes are used exactly as currently positioned — no alignment step.</div>
+          <div id="devProgressRow" style="display:none;">
+            <div class="progress-track"><div class="progress-fill" id="devProgressFill"></div></div>
+          </div>
+          <div id="devResultControls" style="display:none;">
+            <div class="toggle-row" style="padding-top:8px;">
+              <label for="tDevShow">Show overlay</label>
+              <div class="switch on" id="tDevShow"></div>
+            </div>
+            <div id="devColorScaleHost"></div>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="subsection-label">Thickness Map</div>
+          <div class="side-select-row">
+            <label for="thkModelSelect">Model</label>
+            <select class="side-select" id="thkModelSelect"></select>
+          </div>
+          <button class="action primary blue" id="btnThkCompute" disabled style="margin-top:8px;">Compute thickness</button>
+          <div id="thkHint">Self-referential wall thickness: casts an inward ray from each surface point to the nearest opposing internal surface. Works best on a closed (watertight) mesh.</div>
+          <div id="thkProgressRow" style="display:none;">
+            <div class="progress-track"><div class="progress-fill" id="thkProgressFill"></div></div>
+          </div>
+          <div id="thkResultControls" style="display:none;">
+            <div class="toggle-row" style="padding-top:8px;">
+              <label for="tThkShow">Show overlay</label>
+              <div class="switch on" id="tThkShow"></div>
+            </div>
+            <div id="thkColorScaleHost"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1027,6 +1146,7 @@
   <button id="panelToggle" title="Collapse options">◀</button>
 
   <div id="viewport">
+
     <div id="canvasHolder"></div>
     <svg id="drawOverlay"></svg>
     <div id="drawBanner"></div>
@@ -5202,6 +5322,17 @@
 
   document.getElementById('btnReset').addEventListener('click', () => {
     frameCameraOnModels();
+  });
+
+  // ---------- Collapsible sections ----------
+  // Every sidebar section starts as a clickable header; clicking it toggles
+  // whether that section's controls are shown. Independent per section
+  // (not an accordion), so any combination can be open at once.
+  document.querySelectorAll('.section-label.section-toggle').forEach((label) => {
+    label.addEventListener('click', () => {
+      const section = label.closest('.section');
+      if(section) section.classList.toggle('open');
+    });
   });
 
   // ---------- Options panel collapse/expand ----------
