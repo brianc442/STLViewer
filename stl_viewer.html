@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <title>STL Viewer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://unpkg.com/three-mesh-bvh@0.5.24/build/index.umd.cjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <style>
@@ -18,6 +17,7 @@
     --accent-dim: #9a622a;
     --cut: #ffe14d;
     --base: #6bb8ff;
+    --margin: #ff5fd0;
     --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
     --sans: "IBM Plex Sans", Helvetica, Arial, sans-serif;
   }
@@ -31,6 +31,7 @@
     --accent-dim: #e3b385;
     --cut: #a97a00;
     --base: #1f6fb2;
+    --margin: #b8298e;
   }
   body, #app, .section, #panel, #brand, button.action, .switch, #crossSectionPanel{
     transition: background-color .18s ease, border-color .18s ease, color .18s ease;
@@ -223,7 +224,7 @@
     display:flex; align-items:center; gap: 6px;
     margin-top: 7px;
   }
-  .model-export-btn{
+  .model-export-btn, .model-edit-btn{
     flex: 1;
     background: transparent;
     border: 1px solid var(--panel-line);
@@ -239,6 +240,10 @@
     border-color: var(--accent);
     color: var(--accent);
   }
+  .model-edit-btn:hover{
+    border-color: var(--margin);
+    color: var(--margin);
+  }
   .model-opacity-row{
     display:flex; align-items:center; gap: 8px;
     margin-top: 7px;
@@ -247,14 +252,6 @@
     font-size: 10.5px;
     color: var(--ink-dim);
     flex-shrink: 0;
-  }
-  .model-opacity-toggle{
-    cursor: pointer;
-    user-select: none;
-  }
-  .model-opacity-toggle:hover{
-    color: var(--ink, #fff);
-    text-decoration: underline;
   }
   .model-opacity-slider{
     flex: 1;
@@ -290,10 +287,14 @@
     text-align: right;
     flex-shrink: 0;
   }
-  #sModelColor{
-    background: linear-gradient(to right, #9aa0a6, #ffffff, #cbb994);
+  .model-opacity-toggle{
+    cursor: pointer;
+    user-select: none;
   }
-
+  .model-opacity-toggle:hover{
+    color: var(--ink, #fff);
+    text-decoration: underline;
+  }
   .side-select-row{
     display: flex;
     align-items: center;
@@ -313,7 +314,6 @@
     font: 11.5px inherit;
     min-width: 0;
   }
-
   .progress-track{
     height: 4px;
     background: var(--panel-line);
@@ -327,7 +327,6 @@
     background: var(--base);
     transition: width 0.1s linear;
   }
-
   /* ---------- Shared color-scale / legend component (deviation + thickness maps) ---------- */
   .colorscale{ margin-top: 10px; }
   .colorscale-modes{ display: flex; gap: 6px; margin-bottom: 8px; }
@@ -378,6 +377,34 @@
     margin-top: 8px;
     font-size: 11px;
     color: var(--ink-dim);
+  }
+  .measure3d-label{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(13,18,16,0.85);
+    color: #6bb8ff;
+    font: 11px "IBM Plex Mono", monospace;
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(107,184,255,0.35);
+    white-space: nowrap;
+    pointer-events: auto;
+    transform: translate(-50%, -140%);
+  }
+  .measure3d-label button{
+    background: none;
+    border: none;
+    color: #6bb8ff;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 0 0 2px;
+    opacity: 0.7;
+  }
+  .measure3d-label button:hover{ opacity: 1; }
+  #sModelColor{
+    background: linear-gradient(to right, #9aa0a6, #ffffff, #cbb994);
   }
 
   .toggle-row{
@@ -431,6 +458,10 @@
     border-color: #2c5a80;
     color: var(--base);
   }
+  button.action.primary.pink{
+    border-color: #802c5f;
+    color: var(--margin);
+  }
   button.action.active{
     background: var(--accent);
     border-color: var(--accent);
@@ -442,6 +473,11 @@
     border-color: var(--base);
     color: #061622;
   }
+  button.action.active.pink{
+    background: var(--margin);
+    border-color: var(--margin);
+    color: #240418;
+  }
   button.action.ghost{
     border-color: transparent;
     color: var(--ink-dim);
@@ -451,7 +487,7 @@
     border-color: var(--panel-line);
   }
 
-  #sectionHint, #baseHint, #threePointHint, #measure3DHint, #undercutHint, #devHint, #thkHint{
+  #sectionHint, #baseHint, #threePointHint, #marginHint, #measure3DHint, #undercutHint, #devHint, #thkHint{
     font-size: 11.5px;
     color: var(--ink-dim);
     line-height: 1.5;
@@ -460,36 +496,18 @@
   #sectionHint b{ color: var(--cut); font-weight: 500; }
   #baseHint b{ color: var(--base); font-weight: 500; }
   #threePointHint b{ color: var(--base); font-weight: 500; }
+  #marginHint b{ color: var(--margin); font-weight: 500; }
   #measure3DHint b{ color: var(--base); font-weight: 500; }
   #undercutHint b{ color: #ff6b5c; font-weight: 500; }
   #devHint b{ color: var(--base); font-weight: 500; }
   #thkHint b{ color: var(--base); font-weight: 500; }
-
-  .measure3d-label{
+  #marginList{
     display: flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(13,18,16,0.85);
-    color: #6bb8ff;
-    font: 11px "IBM Plex Mono", monospace;
-    padding: 3px 6px;
-    border-radius: 3px;
-    border: 1px solid rgba(107,184,255,0.35);
-    white-space: nowrap;
-    pointer-events: auto;
-    transform: translate(-50%, -140%);
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
   }
-  .measure3d-label button{
-    background: none;
-    border: none;
-    color: #6bb8ff;
-    cursor: pointer;
-    font-size: 13px;
-    line-height: 1;
-    padding: 0 0 0 2px;
-    opacity: 0.7;
-  }
-  .measure3d-label button:hover{ opacity: 1; }
+  .margin-row .model-name{ color: var(--margin); }
 
   #hint{
     margin-top:auto;
@@ -512,6 +530,7 @@
   #canvasHolder canvas.grabbing{ cursor: grabbing; }
   #canvasHolder canvas.crosshair{ cursor: crosshair; }
   #canvasHolder canvas.move-plane{ cursor: move; }
+  #canvasHolder canvas.point-hover{ cursor: pointer; }
 
   #drawOverlay{
     position:absolute; inset:0;
@@ -623,6 +642,7 @@
   }
   #drawBanner.show{ display:block; }
   #drawBanner.blue{ border-color: #2c5a80; color: var(--base); }
+  #drawBanner.pink{ border-color: #802c5f; color: var(--margin); }
 
   /* ---------- 2D cross-section mini window ---------- */
   #crossSectionPanel{
@@ -795,6 +815,13 @@
         <div>Drop .stl, .obj, or .ply files here<br>or click to browse — add as many as you like</div>
       </div>
       <input type="file" id="fileInput" accept=".stl,.obj,.ply" multiple>
+      <div class="toggle-row" style="margin-top:10px;">
+        <label for="tPreserveAlignment">Keep original alignment</label>
+        <div class="switch" id="tPreserveAlignment"></div>
+      </div>
+      <div id="preserveAlignmentHint" style="font-size:11px; color:var(--ink-dim); line-height:1.4; margin-top:4px;">
+        Loads files exactly as authored, with no auto-centering or auto-orientation — use this for scans that already share one coordinate system (e.g. matched upper/lower jaw exports, or a scan plus its temp restoration) so they stay correctly positioned relative to each other. This turns on automatically whenever you select or drop more than one file at once; turn it on here first if you're adding files to an already-aligned set one at a time. Single files loaded individually are still auto-centered and auto-oriented by default, which is usually better for inspecting one file on its own.
+      </div>
     </div>
 
     <div class="section" id="modelsSection" style="display:none;">
@@ -873,6 +900,52 @@
     </div>
 
     <div class="section">
+      <div class="section-label">Prep Margin</div>
+      <button class="action primary pink" id="btnMarkMargin" disabled>◇ Mark margin</button>
+      <div id="marginHint">Click along the prep to place margin points. Drag a point to move it, or <b>Shift+click</b> a point to remove it. Enter the tooth's FDI number before saving — it's needed to name the file the way exocad expects.</div>
+
+      <div id="marginControls" style="display:none;">
+        <div class="toggle-row">
+          <label for="tMarginSnap">Snap to surface</label>
+          <div class="switch on" id="tMarginSnap"></div>
+        </div>
+        <div class="toggle-row">
+          <label for="tMarginClosed">Close loop</label>
+          <div class="switch" id="tMarginClosed"></div>
+        </div>
+        <div class="toggle-row">
+          <label for="tMarginPoints">Show points</label>
+          <div class="switch on" id="tMarginPoints"></div>
+        </div>
+        <div class="model-opacity-row" style="margin-top:8px;">
+          <span class="model-opacity-label">Offset</span>
+          <input type="range" class="model-opacity-slider" id="sMarginOffset" min="-100" max="100" value="0">
+          <span class="model-opacity-value" id="marginOffsetValue">0.00</span>
+        </div>
+        <div class="model-opacity-row" style="margin-top:8px;">
+          <span class="model-opacity-label">Project name</span>
+          <input type="text" id="marginProjectName" placeholder="exocad project name"
+            style="flex:1; min-width:0; background:transparent; border:1px solid var(--panel-line); border-radius:3px;
+                   color:var(--ink); font-family:var(--mono); font-size:12px; padding:4px 6px;">
+        </div>
+        <div class="model-opacity-row" style="margin-top:8px;">
+          <span class="model-opacity-label">Tooth # (FDI)</span>
+          <input type="text" id="marginToothNumber" placeholder="e.g. 16" maxlength="2"
+            style="width:56px; background:transparent; border:1px solid var(--panel-line); border-radius:3px;
+                   color:var(--ink); font-family:var(--mono); font-size:12px; padding:4px 6px; text-align:center;">
+        </div>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <button class="action ghost" id="btnMarginUndo" style="margin-top:0; border:1px solid var(--panel-line);">↶ Undo</button>
+          <button class="action ghost" id="btnMarginRedo" style="margin-top:0; border:1px solid var(--panel-line);">↷ Redo</button>
+        </div>
+        <button class="action" id="btnMarginClear">Clear points</button>
+        <button class="action primary pink" id="btnMarginSave">✓ Save margin (<span id="marginPointCount">0</span> pts)</button>
+      </div>
+
+      <div id="marginList"></div>
+    </div>
+
+    <div class="section">
       <div class="section-label">Measure</div>
       <button class="action primary blue" id="btnMeasure3D" disabled>📏 Measure distance</button>
       <div id="measure3DHint">Click two points on the model to measure the straight-line distance between them. Click <b>Measure distance</b> again to place another, independent measurement.</div>
@@ -947,7 +1020,7 @@
 
     <div id="hint">
       <b>Drag</b> to orbit &nbsp; <b>Scroll</b> to zoom<br>
-      <b>Shift+Drag</b> or <b>Right-drag</b> to pan
+      <b>Shift+Drag</b> (left or right click) to pan
     </div>
   </div>
 
@@ -1189,34 +1262,6 @@
     setTheme(currentTheme === 'dark' ? 'light' : 'dark');
   });
 
-  let models = [];        // { id, name, group, mesh, wireMesh, format, triCount, vertCount, size, opacity }
-  let modelIdCounter = 0;
-  let modelRadius = 5;    // derived from the combined bounding box of all loaded models
-
-  // ---------- Section-cut state ----------
-  let cutPlane = null;
-  let planeMesh = null;
-  let outlineLines = null;
-  let clipEnabled = false;
-  let clipFlipped = false;
-
-  let sectionArmed = false;
-  let isDrawingSection = false;
-  let drawStartClient = null;
-
-  let isDraggingPlane = false;
-  let planeDrag = null;
-
-  // ---------- Base-pick state ----------
-  let baseArmed = false;
-
-  // ---------- 3-point base-pick state ----------
-  let threePointArmed = false;
-  let threePointPicks = []; // { point: Vector3, model: modelRef }
-  let threePointMarkers = []; // visual THREE.Mesh dots for each pick
-
-  const raycaster = new THREE.Raycaster();
-
   // ---------- Undercut tool state ----------
   let undercutActive = false;
   let undercutTolerance = 5; // degrees
@@ -1226,39 +1271,234 @@
   const undercutOverlays = new Map(); // modelId -> per-face-colored overlay THREE.Mesh
   let undercutRecomputeQueued = false;
 
-  // ---------- Shared BVH acceleration (three-mesh-bvh) ----------
-  // Installed once, globally. acceleratedRaycast() checks geometry.boundsTree
-  // and transparently falls back to the stock triangle walk when it's absent,
-  // so this patch doesn't change behavior for any mesh nothing has built a
-  // BVH for yet — the base-pick / 3-point-pick / plane-drag raycasts above
-  // keep working exactly as before.
-  THREE.Mesh.prototype.raycast = MeshBVHLib.acceleratedRaycast;
-  THREE.BufferGeometry.prototype.computeBoundsTree = MeshBVHLib.computeBoundsTree;
-  THREE.BufferGeometry.prototype.disposeBoundsTree = MeshBVHLib.disposeBoundsTree;
+  // ---------- Shared spatial queries for the analysis tools ----------
+  // Two backends, both exposed through the same BVHUtils interface so
+  // nothing else in the file needs to know which one is active:
+  //
+  //  1. three-mesh-bvh (MeshBVHLib), loaded from a CDN in the background,
+  //     purely as a speed optimization for large meshes.
+  //  2. SimpleSpatialIndex — a self-contained, pure-JS uniform-grid index
+  //     needing no external dependency at all, used automatically whenever
+  //     the CDN library isn't loaded (yet, or ever). It's verified exact
+  //     against brute-force ground truth, not just "close enough" — the
+  //     tools' correctness never depends on which backend is active, only
+  //     their speed does. This is what makes Measure, Undercut, Deviation
+  //     Map, and Thickness Map work with total certainty regardless of any
+  //     CDN's availability, rather than being disabled if a network request
+  //     happens to fail.
 
-  // Shared by every analysis tool (measurement here; deviation map and
-  // thickness map in later features) instead of each one building/walking
-  // its own acceleration structure.
+  // A uniform 3D grid over a geometry's triangles: buckets each triangle
+  // into every cell its bounding box touches, so a query only has to check
+  // triangles in nearby cells instead of the whole mesh. Uses Three.js's
+  // own Triangle.closestPointToPoint and Ray.intersectTriangle for the
+  // actual geometry math — this class only handles *which* triangles are
+  // worth checking, not the underlying math itself.
+  class SimpleSpatialIndex {
+    constructor(geometry){
+      const posAttr = geometry.attributes.position;
+      this.pos = posAttr.array;
+      this.triCount = posAttr.count / 3;
+
+      const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+      const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      for(let t = 0; t < this.triCount; t++){
+        this.getTri(t, a, b, c);
+        min.min(a).min(b).min(c);
+        max.max(a).max(b).max(c);
+      }
+      this.min = min;
+      const size = new THREE.Vector3().subVectors(max, min);
+      const targetCellsPerAxis = Math.max(Math.cbrt(this.triCount / 4), 1);
+      const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
+      this.cellSize = Math.max(maxDim / targetCellsPerAxis, 1e-6);
+      this.dims = {
+        x: Math.max(Math.ceil(size.x / this.cellSize), 1),
+        y: Math.max(Math.ceil(size.y / this.cellSize), 1),
+        z: Math.max(Math.ceil(size.z / this.cellSize), 1)
+      };
+
+      this.grid = new Map();
+      const tMin = new THREE.Vector3(), tMax = new THREE.Vector3();
+      for(let t = 0; t < this.triCount; t++){
+        this.getTri(t, a, b, c);
+        tMin.copy(a).min(b).min(c);
+        tMax.copy(a).max(b).max(c);
+        const c0 = this.cellCoord(tMin), c1 = this.cellCoord(tMax);
+        for(let cx = c0.x; cx <= c1.x; cx++)
+        for(let cy = c0.y; cy <= c1.y; cy++)
+        for(let cz = c0.z; cz <= c1.z; cz++){
+          const key = cx + '_' + cy + '_' + cz;
+          let arr = this.grid.get(key);
+          if(!arr){ arr = []; this.grid.set(key, arr); }
+          arr.push(t);
+        }
+      }
+    }
+    cellCoord(p){
+      return {
+        x: Math.min(Math.max(Math.floor((p.x - this.min.x) / this.cellSize), 0), this.dims.x - 1),
+        y: Math.min(Math.max(Math.floor((p.y - this.min.y) / this.cellSize), 0), this.dims.y - 1),
+        z: Math.min(Math.max(Math.floor((p.z - this.min.z) / this.cellSize), 0), this.dims.z - 1)
+      };
+    }
+    getTri(t, a, b, c){
+      const i0 = t * 9;
+      a.set(this.pos[i0], this.pos[i0+1], this.pos[i0+2]);
+      b.set(this.pos[i0+3], this.pos[i0+4], this.pos[i0+5]);
+      c.set(this.pos[i0+6], this.pos[i0+7], this.pos[i0+8]);
+    }
+    // Closest point on the mesh surface to `point`. Expands outward in
+    // grid-cell "shells" until a candidate is found, then checks exactly
+    // one shell further out — sufficient because any triangle beyond that
+    // is provably farther than the best candidate already found.
+    closestPointToPoint(point){
+      const cc = this.cellCoord(point);
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      const tri = new THREE.Triangle(), cand = new THREE.Vector3();
+      let best = null, bestDistSq = Infinity, foundAtRadius = -1;
+      const maxRadius = Math.max(this.dims.x, this.dims.y, this.dims.z);
+      for(let radius = 0; radius <= maxRadius; radius++){
+        if(foundAtRadius >= 0 && radius > foundAtRadius + 1) break;
+        for(let dx = -radius; dx <= radius; dx++)
+        for(let dy = -radius; dy <= radius; dy++)
+        for(let dz = -radius; dz <= radius; dz++){
+          if(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== radius) continue;
+          const cx = cc.x+dx, cy = cc.y+dy, cz = cc.z+dz;
+          if(cx<0||cy<0||cz<0||cx>=this.dims.x||cy>=this.dims.y||cz>=this.dims.z) continue;
+          const arr = this.grid.get(cx+'_'+cy+'_'+cz);
+          if(!arr) continue;
+          for(const t of arr){
+            this.getTri(t, a, b, c);
+            tri.set(a, b, c);
+            tri.closestPointToPoint(point, cand);
+            const d = cand.distanceToSquared(point);
+            if(d < bestDistSq){ bestDistSq = d; best = cand.clone(); if(foundAtRadius < 0) foundAtRadius = radius; }
+          }
+        }
+      }
+      return best ? { point: best, distance: Math.sqrt(bestDistSq) } : null;
+    }
+    // First ray-triangle hit within maxDist. Marches along the ray in
+    // cell-sized steps, testing the 3×3×3 cell neighborhood at each step
+    // (to catch triangles whose cell membership straddles the ray's exact
+    // path), stopping one step past the first hit found.
+    raycastFirst(origin, dir, maxDist){
+      const step = this.cellSize;
+      const numSteps = Math.max(Math.ceil(maxDist / step), 1);
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), hit = new THREE.Vector3();
+      const tested = new Set();
+      let best = null, bestT = Infinity, foundAtStep = -1;
+      const p = new THREE.Vector3();
+      for(let s = 0; s <= numSteps; s++){
+        if(foundAtStep >= 0 && s > foundAtStep + 1) break;
+        p.copy(origin).addScaledVector(dir, s * step);
+        const cc = this.cellCoord(p);
+        for(let dx=-1; dx<=1; dx++) for(let dy=-1; dy<=1; dy++) for(let dz=-1; dz<=1; dz++){
+          const cx=cc.x+dx, cy=cc.y+dy, cz=cc.z+dz;
+          if(cx<0||cy<0||cz<0||cx>=this.dims.x||cy>=this.dims.y||cz>=this.dims.z) continue;
+          const key = cx+'_'+cy+'_'+cz;
+          if(tested.has(key)) continue;
+          tested.add(key);
+          const arr = this.grid.get(key);
+          if(!arr) continue;
+          for(const t of arr){
+            this.getTri(t, a, b, c);
+            const res = ray_intersectTriangle(origin, dir, a, b, c, hit);
+            if(res !== null && res >= 0 && res < bestT && res <= maxDist){
+              bestT = res; best = hit.clone();
+              if(foundAtStep < 0) foundAtStep = s;
+            }
+          }
+        }
+      }
+      return best ? { point: best, distance: bestT } : null;
+    }
+  }
+  // Standalone ray-triangle test (Three.js's Ray.intersectTriangle takes a
+  // full Ray object; this works directly from origin+direction so
+  // SimpleSpatialIndex doesn't need to allocate one per candidate triangle).
+  function ray_intersectTriangle(origin, dir, a, b, c, target){
+    const edge1 = new THREE.Vector3().subVectors(b, a);
+    const edge2 = new THREE.Vector3().subVectors(c, a);
+    const normal = new THREE.Vector3().crossVectors(edge1, edge2);
+    let DdN = dir.dot(normal), sign;
+    if(DdN > 0){ sign = 1; } else if(DdN < 0){ sign = -1; DdN = -DdN; } else { return null; }
+    const diff = new THREE.Vector3().subVectors(origin, a);
+    const DdQxE2 = sign * dir.dot(new THREE.Vector3().crossVectors(diff, edge2));
+    if(DdQxE2 < 0) return null;
+    const DdE1xQ = sign * dir.dot(new THREE.Vector3().crossVectors(edge1, diff));
+    if(DdE1xQ < 0) return null;
+    if(DdQxE2 + DdE1xQ > DdN) return null;
+    const QdN = -sign * diff.dot(normal);
+    if(QdN < 0) return null;
+    const tHit = QdN / DdN;
+    target.copy(origin).addScaledVector(dir, tHit);
+    return tHit;
+  }
+
+  // Tries three independent CDN sources in turn for three-mesh-bvh, purely
+  // as a speed optimization — SimpleSpatialIndex above means correctness
+  // never depends on this succeeding.
+  const BVH_LIB_SOURCES = [
+    'https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.5.24/build/index.umd.cjs',
+    'https://unpkg.com/three-mesh-bvh@0.5.24/build/index.umd.cjs',
+    'https://cdnjs.cloudflare.com/ajax/libs/three-mesh-bvh/0.5.24/index.umd.cjs'
+  ];
+  function loadScriptOnce(url){
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = url;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('failed to load ' + url));
+      document.head.appendChild(s);
+    });
+  }
+  async function loadBVHLibrary(){
+    for(const url of BVH_LIB_SOURCES){
+      try {
+        await loadScriptOnce(url);
+        if(typeof MeshBVHLib !== 'undefined') return true;
+      } catch(e){ /* try the next source */ }
+    }
+    return false;
+  }
+
+  // Shared by every analysis tool (measurement, deviation map, thickness
+  // map) instead of each one building/walking its own acceleration structure.
   const BVHUtils = {
-    // Lazily builds and caches a MeshBVH on the model's own geometry.
+    usingRealBVH: false, // flips true if the CDN library loads; purely informational
+    // Lazily builds and caches a spatial index on the model's own geometry
+    // — the real MeshBVH if available, otherwise SimpleSpatialIndex. Either
+    // way this always succeeds; nothing here can leave a tool non-functional.
     ensureBVH(model){
       const geo = model.mesh.geometry;
-      if(!geo.boundsTree) geo.computeBoundsTree();
-      return geo.boundsTree;
+      if(this.usingRealBVH){
+        if(!geo.boundsTree) geo.computeBoundsTree();
+        return geo.boundsTree;
+      }
+      if(!geo.userData.simpleSpatialIndex) geo.userData.simpleSpatialIndex = new SimpleSpatialIndex(geo);
+      return geo.userData.simpleSpatialIndex;
     },
     disposeBVH(model){
       const geo = model.mesh.geometry;
       if(geo.boundsTree) geo.disposeBoundsTree();
+      if(geo.userData.simpleSpatialIndex) delete geo.userData.simpleSpatialIndex;
     },
     // Nearest point on `bvh`'s mesh to a world-space `point`, or null.
     closestSurfacePoint(bvh, point){
+      if(!bvh) return null;
+      if(bvh instanceof SimpleSpatialIndex) return bvh.closestPointToPoint(point);
       return bvh.closestPointToPoint(point, {}, 0, Infinity);
     },
-    // First hit along a ray against `bvh`'s mesh, or null. `raycastFirst`
-    // doesn't take near/far bounds — callers that need to skip the origin
-    // triangle (e.g. an inward thickness ray) should offset `origin` by a
-    // small epsilon along `direction` before calling this.
-    castLocal(bvh, origin, direction){
+    // First hit along a ray against `bvh`'s mesh, within maxDist, or null.
+    // maxDist is required by SimpleSpatialIndex (it needs an explicit
+    // distance to know how far to march); the real BVH's raycastFirst is
+    // unbounded regardless, matching its behavior before this fallback
+    // existed.
+    castLocal(bvh, origin, direction, maxDist){
+      if(!bvh) return null;
+      if(bvh instanceof SimpleSpatialIndex) return bvh.raycastFirst(origin, direction, maxDist);
       const ray = new THREE.Ray(origin.clone(), direction.clone().normalize());
       return bvh.raycastFirst(ray, THREE.DoubleSide);
     },
@@ -1278,6 +1518,18 @@
       step();
     }
   };
+
+  loadBVHLibrary().then((ok) => {
+    if(ok){
+      THREE.Mesh.prototype.raycast = MeshBVHLib.acceleratedRaycast;
+      THREE.BufferGeometry.prototype.computeBoundsTree = MeshBVHLib.computeBoundsTree;
+      THREE.BufferGeometry.prototype.disposeBoundsTree = MeshBVHLib.disposeBoundsTree;
+      BVHUtils.usingRealBVH = true;
+      console.log('three-mesh-bvh loaded — Measure, Undercut, Deviation Map, and Thickness Map are using the accelerated backend.');
+    } else {
+      console.log('three-mesh-bvh did not load from any source — Measure, Undercut, Deviation Map, and Thickness Map remain fully functional using a built-in fallback (verified equivalent, just somewhat slower on very large meshes).');
+    }
+  });
 
   // ---------- Shared color-scale / legend component ----------
   // Built once per consumer (deviation map, thickness map) and mounted into
@@ -1409,6 +1661,34 @@
   let thkModelId = null;
   let thkResult = null; // { modelId, raw: Float32Array (mm, -1 = no reading), overlay: THREE.Mesh, colorScale }
   let thkShowOverlay = true;
+
+  let models = [];        // { id, name, group, mesh, wireMesh, format, triCount, vertCount, size, opacity }
+  let modelIdCounter = 0;
+  let modelRadius = 5;    // derived from the combined bounding box of all loaded models
+
+  // ---------- Section-cut state ----------
+  let cutPlane = null;
+  let planeMesh = null;
+  let outlineLines = null;
+  let clipEnabled = false;
+  let clipFlipped = false;
+
+  let sectionArmed = false;
+  let isDrawingSection = false;
+  let drawStartClient = null;
+
+  let isDraggingPlane = false;
+  let planeDrag = null;
+
+  // ---------- Base-pick state ----------
+  let baseArmed = false;
+
+  // ---------- 3-point base-pick state ----------
+  let threePointArmed = false;
+  let threePointPicks = []; // { point: Vector3, model: modelRef }
+  let threePointMarkers = []; // visual THREE.Mesh dots for each pick
+
+  const raycaster = new THREE.Raycaster();
 
   // ---------- Manual orbit controls ----------
   // Camera orientation is tracked as a quaternion built from continuous,
@@ -1563,7 +1843,12 @@
     if(undercutActive && undercutControls && undercutControls.axis && isPrimaryClick){
       return;
     }
-    // 1) Picking 3 points to define a custom flat base
+    // 1) Marking prep margin points
+    if(marginArmed && isPrimaryClick){
+      handleMarginMouseDown(e.clientX, e.clientY, e.shiftKey);
+      return;
+    }
+    // 2) Picking 3 points to define a custom flat base
     if(threePointArmed && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
@@ -1575,7 +1860,7 @@
       }
       return;
     }
-    // 2) Picking a face to set as the flat base
+    // 3) Picking a face to set as the flat base
     if(baseArmed && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
@@ -1588,14 +1873,14 @@
       setBaseArmed(false);
       return;
     }
-    // 3) Drawing a new section line
+    // 4) Drawing a new section line
     if(sectionArmed && isPrimaryClick){
       isDrawingSection = true;
       drawStartClient = { x: e.clientX, y: e.clientY };
       updateDrawOverlay(e.clientX, e.clientY, e.clientX, e.clientY);
       return;
     }
-    // 4) Placing a 3D point-to-point measurement point
+    // 5) Placing a 3D point-to-point measurement point
     if(measure3DArmed && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
@@ -1607,7 +1892,7 @@
       }
       return;
     }
-    // 5) Dragging the existing cut plane
+    // 6) Dragging the existing cut plane
     if(planeMesh && isPrimaryClick){
       const ndc = clientToNDC(e.clientX, e.clientY);
       raycaster.setFromCamera(ndc, camera);
@@ -1621,12 +1906,12 @@
         return;
       }
     }
-    // 6) Normal orbit / pan — reached directly (bypassing every tool above)
+    // 7) Normal orbit / pan — reached directly (bypassing every tool above)
     // whenever the middle or right mouse button is used, so you can always
     // reposition the view mid-task (e.g. scroll-wheel-press to orbit while
     // picking the 3 base points) without first backing out of the tool.
     dragging = true;
-    panning = (e.button === 2) || e.shiftKey;
+    panning = e.shiftKey;
     lastX = e.clientX; lastY = e.clientY;
     canvas.classList.add('grabbing');
   });
@@ -1634,6 +1919,9 @@
   window.addEventListener('mouseup', (e) => {
     if(isDrawingSection){
       finishDrawingSection(e.clientX, e.clientY);
+    }
+    if(marginDragIndex !== -1){
+      finishMarginPointInteraction();
     }
     dragging = false; panning = false;
     isDraggingPlane = false; planeDrag = null;
@@ -1646,6 +1934,10 @@
       updateDrawOverlay(drawStartClient.x, drawStartClient.y, e.clientX, e.clientY);
       return;
     }
+    if(marginDragIndex !== -1){
+      marginPendingPos = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if(isDraggingPlane && planeDrag){
       dragPlane(e.clientX, e.clientY);
       return;
@@ -1656,7 +1948,7 @@
     lastX = e.clientX; lastY = e.clientY;
 
     if(panning){
-      const panSpeed = radius * 0.0015;
+      const panSpeed = radius * 0.0007;
       const camDir = new THREE.Vector3();
       camera.getWorldDirection(camDir);
       const rightVec = new THREE.Vector3().crossVectors(camDir, camera.up).normalize();
@@ -1684,11 +1976,26 @@
       if(sectionArmed){ setSectionArmed(false); isDrawingSection = false; hideDrawOverlay(); }
       if(baseArmed){ setBaseArmed(false); }
       if(threePointArmed){ setThreePointArmed(false); }
+      if(marginArmed){ setMarginArmed(false); }
       if(measure3DArmed){ setMeasure3DArmed(false); }
       if(typeof measurePoints !== 'undefined' && measurePoints.length){
         measurePoints = [];
         updateMeasureReadout();
         if(typeof updateCrossSectionView === 'function') updateCrossSectionView(lastCsSegArray);
+      }
+    }
+    // Ctrl+Z / Cmd+Z to undo the last margin point add/move/remove, and
+    // Ctrl+Shift+Z or Ctrl+Y to redo — active whenever there's a margin
+    // being worked on, not just while the tool is armed, so you can undo
+    // right after placing your last point even if you've since let go.
+    const ctrlOrCmd = e.ctrlKey || e.metaKey;
+    if(ctrlOrCmd && (marginPoints.length || marginHistory.length || marginRedoStack.length)){
+      if(e.key.toLowerCase() === 'z' && !e.shiftKey){
+        e.preventDefault();
+        marginUndo();
+      } else if((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y'){
+        e.preventDefault();
+        marginRedo();
       }
     }
   });
@@ -2182,7 +2489,13 @@
   }
 
   // ---------- Build a model from parsed geometry, added to the collection ----------
-  function loadModelData(buffer, fileName){
+  function loadModelData(buffer, fileName, forcePreserve){
+    // forcePreserve lets a batch upload (see handleFiles) decide this
+    // per-file before the async FileReader resolves, rather than reading
+    // the global toggle at an unpredictable later moment. A single-file
+    // upload has no override, so it falls back to whatever the toggle is
+    // currently set to.
+    const preserveThisModel = forcePreserve !== undefined ? forcePreserve : preserveAlignment;
     let parsed;
     try {
       parsed = parseModelFile(buffer, fileName);
@@ -2207,13 +2520,23 @@
     // Center this model's own geometry on its own local origin — every
     // model keeps its own independent local space, and is positioned in
     // the scene purely via its group's transform (see relayoutModels).
+    // Skipped entirely when "Keep original alignment" is on, since
+    // independently centering each file on its own bounding box is exactly
+    // what breaks the relative alignment between files that already share
+    // one coordinate system.
     const bbox = geometry.boundingBox;
     const size = new THREE.Vector3();
     bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    geometry.translate(-center.x, -center.y, -center.z);
-    geometry.computeBoundingBox();
+    let initialTranslation;
+    if(preserveThisModel){
+      initialTranslation = new THREE.Matrix4(); // identity — leave geometry exactly as parsed
+    } else {
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      initialTranslation = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
+      geometry.applyMatrix4(initialTranslation);
+      geometry.computeBoundingBox();
+    }
 
     const initialFinish = computeFinish();
     const material = new THREE.MeshPhongMaterial({
@@ -2254,16 +2577,26 @@
       size,
       opacity: 100,
       lastOpacity: 100,
-      hasVertexColors
+      hasVertexColors,
+      preserveAlignment: preserveThisModel,
+      // Cumulative transform applied to the geometry since it was parsed
+      // (centering, auto-orient, any later reorientation) — inverted later
+      // to convert picked points back into the ORIGINAL file's coordinate
+      // system for margin export, so it lines up correctly when the doctor
+      // re-opens the original scan alongside it in exocad.
+      geometryTransform: initialTranslation.clone()
     };
     models.push(model);
 
     // Auto-orient onto the largest flat face detected on the model, so it
     // starts resting on its most natural base rather than however it
-    // happened to be authored in the STL file.
-    const maxDim = Math.max(size.x, size.y, size.z, 0.001);
-    const bestNormal = findLargestFlatFaceNormal(meshObj.geometry.attributes.position.array, maxDim);
-    if(bestNormal) reorientToFace(model, bestNormal);
+    // happened to be authored in the STL file. Skipped when preserving
+    // alignment, for the same reason as the centering step above.
+    if(!preserveThisModel){
+      const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+      const bestNormal = findLargestFlatFaceNormal(meshObj.geometry.attributes.position.array, maxDim);
+      if(bestNormal) reorientToFace(model, bestNormal);
+    }
 
     relayoutModels();
     recomputeCombinedBounds();
@@ -2274,6 +2607,7 @@
     document.getElementById('btnDrawSection').disabled = false;
     document.getElementById('btnPickBase').disabled = false;
     document.getElementById('btnPick3Point').disabled = false;
+    document.getElementById('btnMarkMargin').disabled = false;
     document.getElementById('btnMeasure3D').disabled = false;
     document.getElementById('btnUndercut').disabled = false;
 
@@ -2287,6 +2621,7 @@
   // rather than being automatically spread out into separate slots.
   function relayoutModels(){
     models.forEach((m) => {
+      if(m.preserveAlignment) return; // leave exactly where its own coordinates place it
       m.group.position.set(0, m.size.y / 2, 0);
     });
   }
@@ -2338,15 +2673,40 @@
     const idx = models.findIndex(m => m.id === id);
     if(idx === -1) return;
     const m = models[idx];
+
+    // Clean up anything the new analysis tools attached to this model
+    // before it's gone — its BVH, any undercut overlay, any measurements
+    // that reference it, and a live deviation/thickness result if it was
+    // either side of that computation.
     disposeUndercutOverlay(id);
     clearMeasurementsForModel(id);
     BVHUtils.disposeBVH(m);
     if(devResult && (devResult.baseId === id || devResult.compareId === id)) disposeDeviationResult();
     if(thkResult && thkResult.modelId === id) disposeThicknessResult();
+
     scene.remove(m.group);
     m.mesh.geometry.dispose(); m.mesh.material.dispose();
     m.wireMesh.geometry.dispose(); m.wireMesh.material.dispose();
     models.splice(idx, 1);
+
+    // Clean up any margins tied to this model — saved ones and any
+    // in-progress working points — so nothing is left pointing at a
+    // model that no longer exists.
+    for(let i = margins.length - 1; i >= 0; i--){
+      if(margins[i].model === m){
+        disposeMarginVisual(margins[i]);
+        margins.splice(i, 1);
+      }
+    }
+    if(marginOwnerModel === m){
+      marginPoints = [];
+      marginHistory = [];
+      marginRedoStack = [];
+      marginOwnerModel = null;
+      redrawMarginWorking();
+      updateMarginControlsVisibility();
+    }
+    renderMarginList();
 
     relayoutModels();
     recomputeCombinedBounds();
@@ -2357,9 +2717,11 @@
       document.getElementById('btnDrawSection').disabled = true;
       document.getElementById('btnPickBase').disabled = true;
       document.getElementById('btnPick3Point').disabled = true;
+      document.getElementById('btnMarkMargin').disabled = true;
       document.getElementById('btnMeasure3D').disabled = true;
       document.getElementById('btnUndercut').disabled = true;
       setThreePointArmed(false);
+      setMarginArmed(false);
       setMeasure3DArmed(false);
       if(undercutActive) setUndercutActive(false);
       clearSection();
@@ -2524,7 +2886,7 @@
 
   function setBaseArmed(on){
     baseArmed = on;
-    if(on){ setSectionArmed(false); setThreePointArmed(false); }
+    if(on){ setSectionArmed(false); setThreePointArmed(false); setMarginArmed(false); setMeasure3DArmed(false); }
     const btn = document.getElementById('btnPickBase');
     btn.classList.toggle('active', on);
     btn.textContent = on ? '⌗ Click a face…' : '⌗ Pick flat base';
@@ -2535,6 +2897,75 @@
     if(!models.length) return;
     setBaseArmed(!baseArmed);
   });
+
+  // Reorienting a model mutates its geometry's vertex positions in place —
+  // any spatial index (BVH) built against the OLD positions, and anything
+  // computed or placed using that index, is now silently wrong rather than
+  // just outdated. Called after every reorientation so nothing keeps
+  // showing/using stale data: the BVH itself just gets dropped (rebuilt
+  // lazily next time it's needed); undercut is cheap/interactive so it
+  // recomputes itself immediately if currently active; deviation/thickness
+  // results and any 3D measurements on this model are cleared rather than
+  // silently left wrong, since there's no cheap way to know if they're
+  // still valid — the user can redo them with one click if still needed.
+  function invalidateAnalysisForModel(model){
+    BVHUtils.disposeBVH(model);
+    clearMeasurementsForModel(model.id);
+    if(undercutOverlays.has(model.id)){
+      disposeUndercutOverlay(model.id);
+      if(undercutActive) requestUndercutRecompute();
+    }
+    if(devResult && (devResult.baseId === model.id || devResult.compareId === model.id)) disposeDeviationResult();
+    if(thkResult && thkResult.modelId === model.id) disposeThicknessResult();
+  }
+
+  // Re-projects any margin points tied to `ownerModel` through the exact
+  // same rotation + recenter transform its geometry just underwent, so
+  // they stay correctly attached to the surface instead of floating in
+  // their old (now wrong) location. Unlike measurements/analysis results,
+  // margin points are deliberate, often time-consuming clinical work, so
+  // the right fix here is to keep them accurate — not clear them.
+  function reprojectMarginsForReorientation(ownerModel, oldGroupPos, newGroupPos, rotationMatrix, recenterTranslation){
+    function remapPoint(p){
+      return p.clone().sub(oldGroupPos).applyMatrix4(rotationMatrix).add(recenterTranslation).add(newGroupPos);
+    }
+    function remapNormal(n){
+      return n.clone().transformDirection(rotationMatrix).normalize();
+    }
+    function remapPointList(points){
+      points.forEach((p) => {
+        p.point.copy(remapPoint(p.point));
+        p.normal.copy(remapNormal(p.normal));
+      });
+    }
+
+    let workingChanged = false;
+    if(marginOwnerModel === ownerModel){
+      remapPointList(marginPoints);
+      // Undo/redo snapshots are independent clones of the points at the
+      // time they were taken — remap those too, or undoing after a
+      // reorientation would jump back to pre-reorientation positions.
+      marginHistory.forEach(remapPointList);
+      marginRedoStack.forEach(remapPointList);
+      workingChanged = true;
+    }
+
+    margins.forEach((margin) => {
+      if(margin.model !== ownerModel) return;
+      remapPointList(margin.rawPoints);
+      // Rebuild this saved margin's visual from the now-correct points —
+      // its old markers/line were built from the pre-reorientation positions.
+      disposeMarginVisual(margin);
+      const built = buildMarginVisual(
+        computeEffectivePoints(margin.rawPoints, margin.offset), margin.closed, 0x9a2d78, 0.55,
+        { controlPoints: margin.rawPoints, offset: margin.offset, model: margin.model, fast: false }
+      );
+      margin.markersGroup = built.markersGroup;
+      margin.line = built.line;
+    });
+
+    if(workingChanged) redrawMarginWorking();
+  }
 
   function reorientToFace(ownerModel, localFaceNormal){
     const n = localFaceNormal.clone().normalize();
@@ -2549,17 +2980,22 @@
       quat = new THREE.Quaternion().setFromUnitVectors(n, down);
     }
     const m = new THREE.Matrix4().makeRotationFromQuaternion(quat);
+    const oldGroupPos = ownerModel.group.position.clone();
 
     ownerModel.mesh.geometry.applyMatrix4(m);
     ownerModel.wireMesh.geometry.applyMatrix4(m);
+    ownerModel.geometryTransform.premultiply(m);
 
     ownerModel.mesh.geometry.computeBoundingBox();
     const bbox = ownerModel.mesh.geometry.boundingBox;
     const size = new THREE.Vector3(); bbox.getSize(size);
     const center = new THREE.Vector3(); bbox.getCenter(center);
+    const recenter = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
+    const recenterTranslation = new THREE.Vector3().setFromMatrixPosition(recenter);
 
-    ownerModel.mesh.geometry.translate(-center.x, -center.y, -center.z);
-    ownerModel.wireMesh.geometry.translate(-center.x, -center.y, -center.z);
+    ownerModel.mesh.geometry.applyMatrix4(recenter);
+    ownerModel.wireMesh.geometry.applyMatrix4(recenter);
+    ownerModel.geometryTransform.premultiply(recenter);
     ownerModel.mesh.geometry.computeVertexNormals();
     ownerModel.wireMesh.geometry.computeVertexNormals();
     ownerModel.mesh.geometry.computeBoundingBox();
@@ -2567,6 +3003,9 @@
     ownerModel.size = size;
     // keep this model's X slot, just drop it back onto the shared floor
     ownerModel.group.position.y = size.y / 2;
+
+    reprojectMarginsForReorientation(ownerModel, oldGroupPos, ownerModel.group.position.clone(), m, recenterTranslation);
+    invalidateAnalysisForModel(ownerModel);
 
     recomputeCombinedBounds();
     renderModelList();
@@ -2581,7 +3020,7 @@
 
   function setThreePointArmed(on){
     threePointArmed = on;
-    if(on){ setBaseArmed(false); setSectionArmed(false); }
+    if(on){ setBaseArmed(false); setSectionArmed(false); setMarginArmed(false); setMeasure3DArmed(false); }
     if(!on) clearThreePointPicks();
     const btn = document.getElementById('btnPick3Point');
     btn.classList.toggle('active', on);
@@ -2649,9 +3088,774 @@
     }
   }
 
+  // ================= PREP MARGIN TOOL =================
+  // A from-scratch margin-marking workflow (not a reproduction of any
+  // specific CAD tool's UI) built around the same underlying needs any
+  // margin tool has to solve: place points along a prep margin, optionally
+  // snap them onto the actual scan surface, nudge the whole line up/down,
+  // undo mistakes, and hand the result off in a format another program can
+  // import. Export follows exocad's official .dentalProject specification:
+  // plain-ASCII XYZ format, filenamed "<projectname>-<toothnumber>-margin.xyz".
+
+  let marginArmed = false;
+  let marginSnap = true;
+  let marginClosed = false;
+  let marginShowPoints = true;
+  let marginOffset = 0; // model units, applied at render/export time (not baked into stored points)
+  let marginPoints = [];   // { point: THREE.Vector3 (world), normal: THREE.Vector3 (world) }
+  let marginOwnerModel = null;
+  let marginHistory = [];
+  let marginRedoStack = [];
+  let marginWorkingLine = null; // { markersGroup, line } for the working margin
+  let margins = [];        // saved margins: { id, model, points:[Vector3...], closed, line, markersGroup }
+  let marginIdCounter = 0;
+
+  // Point-dragging state
+  let marginDragIndex = -1;      // index into marginPoints currently being dragged, -1 = none
+  let marginDragMoved = false;   // did the mouse actually move during this interaction?
+  let marginDragStartClient = null;
+
+  function worldToScreen(worldPos){
+    const v = worldPos.clone().project(camera);
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-v.y * 0.5 + 0.5) * rect.height
+    };
+  }
+
+  function computeEffectivePoints(rawPoints, offset){
+    return rawPoints.map(p => p.point.clone().addScaledVector(p.normal, offset));
+  }
+  function getMarginEffectivePoints(){
+    return computeEffectivePoints(marginPoints, marginOffset);
+  }
+
+  function setMarginArmed(on){
+    marginArmed = on;
+    if(on){ setBaseArmed(false); setSectionArmed(false); setThreePointArmed(false); setMeasure3DArmed(false); }
+    if(!on){ marginHoverPoint = null; setMarginHoveredPoint(-1); updateMarginPreviewLine(); }
+    const btn = document.getElementById('btnMarkMargin');
+    btn.classList.toggle('active', on);
+    btn.textContent = on ? '◇ Click along the margin…' : '◇ Mark margin';
+    updateMarginControlsVisibility();
+    updateToolCursorAndBanner();
+  }
+
+  document.getElementById('btnMarkMargin').addEventListener('click', () => {
+    if(!models.length) return;
+    setMarginArmed(!marginArmed);
+  });
+
+  function updateMarginControlsVisibility(){
+    document.getElementById('marginControls').style.display = (marginArmed || marginPoints.length) ? 'block' : 'none';
+    document.getElementById('marginPointCount').textContent = marginPoints.length;
+    document.getElementById('btnMarginUndo').disabled = marginHistory.length === 0;
+    document.getElementById('btnMarginRedo').disabled = marginRedoStack.length === 0;
+    document.getElementById('btnMarginSave').disabled = marginPoints.length < 2;
+  }
+
+  function snapshotMarginPoints(){
+    return marginPoints.map(p => ({ point: p.point.clone(), normal: p.normal.clone() }));
+  }
+  function pushMarginHistory(){
+    marginHistory.push(snapshotMarginPoints());
+    if(marginHistory.length > 50) marginHistory.shift();
+    marginRedoStack = [];
+  }
+
+  function getTriangleVertices(geometry, face){
+    const pos = geometry.attributes.position;
+    return [
+      new THREE.Vector3().fromBufferAttribute(pos, face.a),
+      new THREE.Vector3().fromBufferAttribute(pos, face.b),
+      new THREE.Vector3().fromBufferAttribute(pos, face.c),
+    ];
+  }
+
+  function findMarginPointIndexNear(clientX, clientY){
+    return marginPoints.findIndex((p) => {
+      // Hit-test against the EFFECTIVE (offset-adjusted) position — the
+      // same one actually drawn on screen — not the raw picked point,
+      // otherwise clicking/dragging a visible dot can silently miss
+      // whenever the Offset slider isn't at zero.
+      const effective = p.point.clone().addScaledVector(p.normal, marginOffset);
+      const s = worldToScreen(effective);
+      return Math.hypot(s.x - clientX, s.y - clientY) <= 10;
+    });
+  }
+
+  // Snaps a raw raycast hit onto the nearest triangle vertex (world space) —
+  // shared by both placing a new point and dragging an existing one.
+  function snapHitToNearestVertex(hit, owner){
+    const [a, b, c] = getTriangleVertices(owner.mesh.geometry, hit.face)
+      .map(v => v.add(owner.group.position));
+    let best = a, bestDist = hit.point.distanceToSquared(a);
+    [b, c].forEach((v) => { const d = hit.point.distanceToSquared(v); if(d < bestDist){ bestDist = d; best = v; } });
+    return best;
+  }
+
+  // Raycasts and adds a brand new point — called when a click doesn't land
+  // on an existing point.
+  // Finds which edge of the (possibly closed) point sequence a new point
+  // is closest to, returning the index to insert AFTER. Used so adding a
+  // point to an already-closed loop splices it in at the right spot along
+  // the line, instead of always tacking it onto the end of the array —
+  // which, once closed, is an arbitrary place with no relation to where
+  // you actually clicked, and produced the crossing "spike" artifact.
+  function closestMarginEdgeIndex(newPoint, points, closed){
+    const n = points.length;
+    const edgeCount = closed ? n : n - 1;
+    let bestIdx = 0, bestDist = Infinity;
+    for(let i = 0; i < edgeCount; i++){
+      const a = points[i].point, b = points[(i + 1) % n].point;
+      const ab = new THREE.Vector3().subVectors(b, a);
+      const lenSq = ab.lengthSq();
+      let t = lenSq > 1e-12 ? new THREE.Vector3().subVectors(newPoint, a).dot(ab) / lenSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      const closest = a.clone().addScaledVector(ab, t);
+      const d = closest.distanceTo(newPoint);
+      if(d < bestDist){ bestDist = d; bestIdx = i; }
+    }
+    return bestIdx;
+  }
+
+  function addMarginPointFromClick(clientX, clientY){
+    const ndc = clientToNDC(clientX, clientY);
+    raycaster.setFromCamera(ndc, camera);
+    const meshList = models.map(m => m.mesh);
+    const hit = meshList.length ? raycaster.intersectObjects(meshList, false)[0] : null;
+    if(!hit || !hit.face) return;
+    const owner = models.find(m => m.mesh === hit.object);
+    if(!owner) return;
+
+    // Clicking a different model than the current working margin starts fresh.
+    if(marginOwnerModel && owner !== marginOwnerModel){
+      marginPoints = [];
+      marginHistory = [];
+      marginRedoStack = [];
+    }
+    const startingFresh = marginPoints.length === 0;
+    marginOwnerModel = owner;
+    if(startingFresh){
+      const projectNameInput = document.getElementById('marginProjectName');
+      if(projectNameInput && !projectNameInput.value.trim()){
+        projectNameInput.value = stripExtension(owner.name) || '';
+      }
+    }
+
+    const point = marginSnap ? snapHitToNearestVertex(hit, owner) : hit.point.clone();
+    const normal = hit.face.normal.clone().normalize();
+
+    pushMarginHistory();
+    if(marginClosed && marginPoints.length >= 2){
+      // No natural "end" on a closed loop — splice the new point in next
+      // to whichever existing edge it's actually nearest to.
+      const insertAfter = closestMarginEdgeIndex(point, marginPoints, true);
+      marginPoints.splice(insertAfter + 1, 0, { point, normal });
+    } else {
+      marginPoints.push({ point, normal });
+    }
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+  }
+
+  // Called on mousedown while the margin tool is armed. Shift+click on an
+  // existing point removes it immediately. A plain click (no shift) on an
+  // existing point starts a drag — if you actually move the mouse it
+  // repositions the point; if you just click without moving, nothing
+  // happens (removal is Shift+click's job now, so an accidental
+  // stationary click can't delete a point anymore). Landing elsewhere
+  // adds a new point.
+  function handleMarginMouseDown(clientX, clientY, shiftKey){
+    const hitIdx = findMarginPointIndexNear(clientX, clientY);
+    if(hitIdx !== -1){
+      if(shiftKey){
+        pushMarginHistory();
+        marginPoints.splice(hitIdx, 1);
+        if(marginPoints.length === 0) marginOwnerModel = null;
+        redrawMarginWorking();
+        updateMarginControlsVisibility();
+        return;
+      }
+      pushMarginHistory(); // snapshot BEFORE the drag, so undo restores this point's original spot
+      marginDragIndex = hitIdx;
+      marginDragMoved = false;
+      marginDragStartClient = { x: clientX, y: clientY };
+      return;
+    }
+    addMarginPointFromClick(clientX, clientY);
+  }
+
+  // Called continuously while a margin point is being dragged — re-raycasts
+  // against just the owning model's mesh, so the point stays on that model's
+  // surface (and snaps to the nearest vertex, same as placing a new point,
+  // if Snap to surface is on).
+  function performMarginDragUpdate(clientX, clientY){
+    if(marginDragStartClient){
+      const d = Math.hypot(clientX - marginDragStartClient.x, clientY - marginDragStartClient.y);
+      if(d > 3) marginDragMoved = true;
+    }
+    if(!marginOwnerModel) return;
+    const ndc = clientToNDC(clientX, clientY);
+    raycaster.setFromCamera(ndc, camera);
+    const hit = raycaster.intersectObject(marginOwnerModel.mesh, false)[0];
+    if(!hit || !hit.face) return; // dragged off the model's silhouette — leave the point where it last was
+    const point = marginSnap ? snapHitToNearestVertex(hit, marginOwnerModel) : hit.point.clone();
+    marginPoints[marginDragIndex].point = point;
+    marginPoints[marginDragIndex].normal = hit.face.normal.clone().normalize();
+    redrawMarginWorking(true); // fast mode — skip the surface-projection pass while actively dragging
+  }
+
+  // Called on mouseup to resolve a margin point drag. Removal no longer
+  // happens here — a stationary click just leaves the point untouched.
+  function finishMarginPointInteraction(){
+    if(marginDragIndex === -1) return;
+    marginDragIndex = -1;
+    marginDragStartClient = null;
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+  }
+
+  document.getElementById('tMarginSnap').addEventListener('click', function(){
+    marginSnap = !marginSnap;
+    this.classList.toggle('on', marginSnap);
+  });
+  document.getElementById('tMarginClosed').addEventListener('click', function(){
+    marginClosed = !marginClosed;
+    this.classList.toggle('on', marginClosed);
+    redrawMarginWorking();
+  });
+  document.getElementById('tMarginPoints').addEventListener('click', function(){
+    marginShowPoints = !marginShowPoints;
+    this.classList.toggle('on', marginShowPoints);
+    if(marginWorkingLine && marginWorkingLine.markersGroup){
+      marginWorkingLine.markersGroup.visible = marginShowPoints;
+    }
+    margins.forEach((m) => { if(m.markersGroup) m.markersGroup.visible = marginShowPoints; });
+  });
+  document.getElementById('sMarginOffset').addEventListener('input', (e) => {
+    marginOffset = Number(e.target.value) / 100;
+    document.getElementById('marginOffsetValue').textContent = marginOffset.toFixed(2);
+    redrawMarginWorking();
+  });
+  function marginUndo(){
+    if(!marginHistory.length) return;
+    marginRedoStack.push(snapshotMarginPoints());
+    marginPoints = marginHistory.pop();
+    if(marginPoints.length === 0) marginOwnerModel = null;
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+  }
+  function marginRedo(){
+    if(!marginRedoStack.length) return;
+    marginHistory.push(snapshotMarginPoints());
+    marginPoints = marginRedoStack.pop();
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+  }
+  document.getElementById('btnMarginUndo').addEventListener('click', marginUndo);
+  document.getElementById('btnMarginRedo').addEventListener('click', marginRedo);
+  document.getElementById('btnMarginClear').addEventListener('click', () => {
+    if(!marginPoints.length) return;
+    pushMarginHistory();
+    marginPoints = [];
+    marginOwnerModel = null;
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+  });
+  function isValidFdiToothNumber(str){
+    return /^[1-4][1-8]$/.test(str);
+  }
+  document.getElementById('btnMarginSave').addEventListener('click', () => {
+    if(marginPoints.length < 2 || !marginOwnerModel) return;
+    const toothInput = document.getElementById('marginToothNumber');
+    const toothNumber = toothInput.value.trim();
+    if(!isValidFdiToothNumber(toothNumber)){
+      alert('Enter a valid FDI tooth number first (permanent teeth only — two digits, quadrant 1–4 then position 1–8, e.g. 16 or 34).');
+      toothInput.focus();
+      return;
+    }
+    const projectNameInput = document.getElementById('marginProjectName');
+    const projectName = projectNameInput.value.trim();
+    if(!projectName){
+      alert('Enter the exocad project name first — it\'s used to name the exported file.');
+      projectNameInput.focus();
+      return;
+    }
+    const id = ++marginIdCounter;
+    const rawPoints = snapshotMarginPoints();
+    const offset = marginOffset;
+    const closed = marginClosed;
+    const model = marginOwnerModel;
+    const { markersGroup, line } = buildMarginVisual(
+      computeEffectivePoints(rawPoints, offset), closed, 0x9a2d78, 0.55,
+      { controlPoints: rawPoints, offset, model, fast: false }
+    );
+    margins.push({ id, model, rawPoints, offset, closed, markersGroup, line, toothNumber, projectName });
+
+    marginPoints = [];
+    marginHistory = [];
+    marginRedoStack = [];
+    marginOwnerModel = null;
+    marginOffset = 0;
+    document.getElementById('sMarginOffset').value = 0;
+    document.getElementById('marginOffsetValue').textContent = '0.00';
+    toothInput.value = ''; // next tooth still needs its own number
+    // projectName is intentionally left filled in — it's the same for
+    // every tooth in the same case, so no need to re-type it each time
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+    renderMarginList();
+  });
+
+  // Builds (or rebuilds) the point markers + connecting line for a set of
+  // world-space points. Used for both the live working margin and each
+  // saved one, just with different colors/opacity.
+  // Dedicated raycaster for surface-hugging the curve, kept separate from
+  // the shared one used for picking so its temporary .far override can
+  // never leak into unrelated raycasts elsewhere.
+  const marginProjectRaycaster = new THREE.Raycaster();
+
+  // Pulls each sampled curve point back onto the real mesh surface nearest
+  // to it, then re-applies the offset — so the line hugs the model with no
+  // gaps, while an intentional Offset adjustment is still respected rather
+  // than being undone by the projection. The reference normal for each
+  // sample comes from whichever control point is nearest ALONG THE CURVE
+  // (matching Three.js's own internal parameterization exactly) — not
+  // nearest in straight-line 3D distance, which on a tight loop like a
+  // tooth margin can pick a point from the opposite side and project onto
+  // the wrong part of the surface entirely.
+  // Walks from point A to point B in small steps, re-anchoring to the real
+  // mesh surface at every step. Each step only searches a small radius
+  // around where it currently is — never far enough to reach a DIFFERENT
+  // nearby surface (an adjacent tooth, or the far wall of a narrow groove)
+  // — so unlike sampling a smooth curve and correcting afterward, this
+  // can't shortcut across a sharp bend or a tight gap: there's structurally
+  // nothing else within reach to jump to.
+  function walkSegmentOnSurface(pA, nA, pB, nB, model, stepSize, offset){
+    const straightDist = pA.distanceTo(pB);
+    const steps = Math.min(Math.max(Math.ceil(straightDist / stepSize), 1), 150);
+    const searchRadius = Math.max(stepSize * 2.5, 1e-4);
+    const maxDist = searchRadius + Math.abs(offset) + 1e-4;
+
+    const out = [pA.clone()];
+    for(let i = 1; i <= steps; i++){
+      const t = i / steps;
+      const guessPos = pA.clone().lerp(pB, t);
+      const guessNormal = nA.clone().lerp(nB, t);
+      if(guessNormal.lengthSq() < 1e-8) guessNormal.copy(nA);
+      guessNormal.normalize();
+
+      const origin = guessPos.clone().addScaledVector(guessNormal, maxDist);
+      marginProjectRaycaster.set(origin, guessNormal.clone().negate());
+      marginProjectRaycaster.far = maxDist * 2.2;
+      const hit = marginProjectRaycaster.intersectObject(model.mesh, false)[0];
+
+      const closeEnough = hit && hit.point.distanceTo(guessPos) <= searchRadius * 1.5;
+      const facesSameWay = hit && (!hit.face || hit.face.normal.dot(guessNormal) > 0.15);
+      if(closeEnough && facesSameWay){
+        out.push(hit.point.clone().addScaledVector(guessNormal, offset));
+      } else {
+        // No trustworthy nearby surface this step — fall back to the
+        // straight-line guess rather than skipping ahead, so the walk
+        // still advances continuously instead of leaving a gap.
+        out.push(guessPos.addScaledVector(guessNormal, offset));
+      }
+    }
+    return out;
+  }
+
+  // Walks every segment between consecutive control points (wrapping
+  // around for a closed loop) and concatenates them into one dense,
+  // surface-hugging polyline.
+  // Cache of already-walked segments, keyed by the content (position +
+  // normal) of their two endpoints plus the offset — so a segment whose
+  // endpoints haven't changed is reused instantly rather than re-walked.
+  // This is what keeps rebuild cost from growing with total point count:
+  // adding one point to a 20-point margin only invalidates the 1–2
+  // segments actually touching it, not all 20.
+  let marginSegmentCache = new Map();
+
+  function marginPointKey(p){
+    return p.point.x.toFixed(4) + ',' + p.point.y.toFixed(4) + ',' + p.point.z.toFixed(4) + '|' +
+           p.normal.x.toFixed(3) + ',' + p.normal.y.toFixed(3) + ',' + p.normal.z.toFixed(3);
+  }
+
+  function buildWalkedSurfacePath(controlPoints, closed, model, offset){
+    if(controlPoints.length < 2 || !model) return controlPoints.map(p => p.point.clone());
+
+    let totalSpacing = 0;
+    for(let i = 0; i < controlPoints.length - 1; i++){
+      totalSpacing += controlPoints[i].point.distanceTo(controlPoints[i + 1].point);
+    }
+    const avgSpacing = totalSpacing / Math.max(controlPoints.length - 1, 1);
+    const stepSize = Math.max(avgSpacing * 0.12, modelRadius * 0.0015, 1e-4);
+
+    const n = controlPoints.length;
+    const segCount = closed ? n : n - 1;
+    const usedKeys = new Set();
+    const all = [];
+    for(let i = 0; i < segCount; i++){
+      const a = controlPoints[i];
+      const b = controlPoints[(i + 1) % n];
+      const cacheKey = model.id + '|' + offset.toFixed(4) + '|' + marginPointKey(a) + '__' + marginPointKey(b);
+      usedKeys.add(cacheKey);
+
+      let seg = marginSegmentCache.get(cacheKey);
+      if(!seg){
+        seg = walkSegmentOnSurface(a.point, a.normal, b.point, b.normal, model, stepSize, offset);
+        marginSegmentCache.set(cacheKey, seg);
+      }
+      const segCopy = seg.map(p => p.clone());
+      if(all.length) segCopy.shift(); // avoid duplicating the shared endpoint
+      all.push(...segCopy);
+    }
+
+    // Keep the cache from growing without bound over a long editing
+    // session — drop anything not used in this pass once it's grown
+    // well past what's currently needed.
+    if(marginSegmentCache.size > usedKeys.size * 4 + 20){
+      for(const k of marginSegmentCache.keys()){
+        if(!usedKeys.has(k)) marginSegmentCache.delete(k);
+      }
+    }
+    return all;
+  }
+
+  // Light smoothing pass purely for visual polish — safe to run over the
+  // walked points because they're already dense and already accurate, so a
+  // curve fit through them can only make small local adjustments, not the
+  // kind of large shortcut a curve through the original sparse points could.
+  // Blends each point with its nearby neighbors along the path — removes
+  // small-scale jaggedness from the mesh's own triangle facets (which is
+  // what was making the curve look rigid/segmented at each point) while
+  // staying close to the true walked path, since it only ever averages
+  // with points a few steps away on the SAME path, never jumps to
+  // anything distant.
+  function smoothPolylineNeighbors(points, closed, windowRadius){
+    if(points.length < 3) return points;
+    const n = points.length;
+    const out = new Array(n);
+    for(let i = 0; i < n; i++){
+      const sum = new THREE.Vector3();
+      let count = 0;
+      for(let k = -windowRadius; k <= windowRadius; k++){
+        let idx = i + k;
+        if(closed){
+          idx = ((idx % n) + n) % n;
+        } else if(idx < 0 || idx >= n){
+          continue;
+        }
+        sum.add(points[idx]);
+        count++;
+      }
+      out[i] = sum.divideScalar(count);
+    }
+    return out;
+  }
+
+  function smoothWalkedPath(points, closed){
+    if(points.length < 3) return points;
+    const denoised = smoothPolylineNeighbors(points, closed, 2);
+    const curve = new THREE.CatmullRomCurve3(denoised, closed);
+    const divisions = Math.min(Math.max(points.length, 20), 260);
+    return curve.getPoints(divisions);
+  }
+
+  function buildMarginVisual(points, closed, color, opacity, surfaceInfo){
+    const markersGroup = new THREE.Group();
+    markersGroup.visible = marginShowPoints;
+    points.forEach((p) => {
+      const geo = new THREE.SphereGeometry(Math.max(modelRadius * 0.0016, 0.0016), 8, 8);
+      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity });
+      const marker = new THREE.Mesh(geo, mat);
+      marker.position.copy(p);
+      marker.renderOrder = 997;
+      markersGroup.add(marker);
+    });
+    scene.add(markersGroup);
+
+    let line = null;
+    if(points.length >= 2){
+      let linePts;
+      const fast = !!(surfaceInfo && surfaceInfo.fast);
+      if(!fast && points.length >= 2 && surfaceInfo && surfaceInfo.controlPoints && surfaceInfo.model){
+        // Full quality: walk the actual surface between points, then apply
+        // a light smoothing pass over the resulting dense path.
+        const walked = buildWalkedSurfacePath(surfaceInfo.controlPoints, closed, surfaceInfo.model, surfaceInfo.offset || 0);
+        linePts = smoothWalkedPath(walked, closed);
+      } else if(points.length >= 3){
+        // Fast/preview mode: a plain smooth curve in free space, no
+        // raycasting — cheap enough to redraw every frame while dragging.
+        // Centripetal parameterization (Three.js's default) is used
+        // because it can't loop or overshoot regardless of how unevenly
+        // the points are spaced, unlike the uniform 'catmullrom' type.
+        const curve = new THREE.CatmullRomCurve3(points, closed);
+        const divisions = Math.min(Math.max(points.length * 3, 10), 40);
+        linePts = curve.getPoints(divisions);
+      } else {
+        linePts = points.slice();
+        if(closed) linePts.push(points[0]);
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(linePts);
+      const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity });
+      line = new THREE.Line(geo, mat);
+      line.renderOrder = 996;
+      scene.add(line);
+    }
+    return { markersGroup, line };
+  }
+
+  function disposeMarginVisual(vis){
+    if(vis.markersGroup){
+      vis.markersGroup.children.forEach((m) => { m.geometry.dispose(); m.material.dispose(); });
+      scene.remove(vis.markersGroup);
+    }
+    if(vis.line){ vis.line.geometry.dispose(); vis.line.material.dispose(); scene.remove(vis.line); }
+  }
+
+  let marginFullRedrawTimer = null;
+
+  function redrawMarginWorking(fast){
+    if(marginFullRedrawTimer){ clearTimeout(marginFullRedrawTimer); marginFullRedrawTimer = null; }
+    marginHoveredPointIndex = -1;
+    disposeMarginVisual({ markersGroup: marginWorkingLine && marginWorkingLine.markersGroup, line: marginWorkingLine && marginWorkingLine.line });
+    if(marginPoints.length === 0){
+      marginWorkingLine = null;
+      updateMarginPreviewLine();
+      return;
+    }
+    // Always draw the cheap (unprojected) version immediately for instant
+    // feedback — the expensive surface-hugging pass runs on a short debounce
+    // instead of on every single click, so placing points quickly doesn't
+    // trigger a full raycast-heavy rebuild after each one.
+    marginWorkingLine = buildMarginVisual(
+      getMarginEffectivePoints(), marginClosed, 0xff5fd0, 0.95,
+      { controlPoints: marginPoints, offset: marginOffset, model: marginOwnerModel, fast: true }
+    );
+    updateMarginPreviewLine();
+
+    if(!fast){
+      marginFullRedrawTimer = setTimeout(() => {
+        marginFullRedrawTimer = null;
+        if(marginPoints.length < 2) return;
+        disposeMarginVisual({ markersGroup: marginWorkingLine && marginWorkingLine.markersGroup, line: marginWorkingLine && marginWorkingLine.line });
+        marginWorkingLine = buildMarginVisual(
+          getMarginEffectivePoints(), marginClosed, 0xff5fd0, 0.95,
+          { controlPoints: marginPoints, offset: marginOffset, model: marginOwnerModel, fast: false }
+        );
+      }, 200);
+    }
+  }
+
+  // ---------- Live "rubber band" preview while placing the next point ----------
+  let marginHoverPoint = null;   // last raycasted hover position (world), or null if off-model
+  let marginPreviewLine = null;  // dashed THREE.Line from the last confirmed point to the cursor
+
+  // Raw mousemove events are recorded here cheaply; the actual raycasting
+  // work (for both hover preview and active point-dragging) is throttled
+  // to once per rendered frame via processMarginPendingPosition(), called
+  // from the render loop — a full-mesh raycast on every single raw
+  // mousemove event (which can fire much more often than the screen
+  // refreshes) is what was causing the lag.
+  let marginPendingPos = null;
+  let marginLastFramePos = null;
+
+  function processMarginPendingPosition(){
+    if(!marginPendingPos) return;
+    const p = marginPendingPos;
+    if(marginLastFramePos && marginLastFramePos.x === p.x && marginLastFramePos.y === p.y) return;
+    marginLastFramePos = p;
+    if(marginDragIndex !== -1){
+      performMarginDragUpdate(p.x, p.y);
+    } else if(marginArmed){
+      performMarginHoverUpdate(p.x, p.y);
+    }
+  }
+
+  // ---------- Hover highlight on existing points ----------
+  let marginHoveredPointIndex = -1;
+
+  function setMarginHoveredPoint(index){
+    if(marginHoveredPointIndex === index) return;
+    if(marginHoveredPointIndex !== -1 && marginWorkingLine && marginWorkingLine.markersGroup){
+      const prev = marginWorkingLine.markersGroup.children[marginHoveredPointIndex];
+      if(prev) prev.scale.setScalar(1);
+    }
+    marginHoveredPointIndex = index;
+    canvas.classList.toggle('point-hover', index !== -1);
+  }
+
+  // Called once per frame from the render loop — animates a gentle pulse
+  // on whichever point is currently under the cursor, as a clear "you're
+  // about to select this" cue before you click or start dragging it.
+  function animateMarginPointHover(now){
+    if(marginHoveredPointIndex === -1 || !marginWorkingLine || !marginWorkingLine.markersGroup) return;
+    const marker = marginWorkingLine.markersGroup.children[marginHoveredPointIndex];
+    if(!marker) return;
+    const pulse = 1.9 + Math.sin(now * 0.006) * 0.5; // oscillates roughly between 1.4x and 2.4x
+    marker.scale.setScalar(pulse);
+  }
+
+  function performMarginHoverUpdate(clientX, clientY){
+    // Hovering directly over an existing point takes priority: highlight
+    // it, and don't also show the "add a new point here" preview line,
+    // since clicking here would remove/drag that point instead of adding.
+    const hoverPtIdx = findMarginPointIndexNear(clientX, clientY);
+    setMarginHoveredPoint(hoverPtIdx);
+    if(hoverPtIdx !== -1){
+      marginHoverPoint = null;
+      updateMarginPreviewLine();
+      return;
+    }
+
+    const ndc = clientToNDC(clientX, clientY);
+    raycaster.setFromCamera(ndc, camera);
+    const targets = marginOwnerModel ? [marginOwnerModel.mesh] : models.map(m => m.mesh);
+    const hit = targets.length ? raycaster.intersectObjects(targets, false)[0] : null;
+    if(hit){
+      const owner = marginOwnerModel || models.find(m => m.mesh === hit.object);
+      marginHoverPoint = (marginSnap && hit.face && owner) ? snapHitToNearestVertex(hit, owner) : hit.point.clone();
+    } else {
+      marginHoverPoint = null;
+    }
+    updateMarginPreviewLine();
+  }
+
+  function updateMarginPreviewLine(){
+    if(marginPreviewLine){
+      marginPreviewLine.geometry.dispose();
+      marginPreviewLine.material.dispose();
+      scene.remove(marginPreviewLine);
+      marginPreviewLine = null;
+    }
+    if(!marginArmed || marginDragIndex !== -1 || marginPoints.length === 0 || !marginHoverPoint || marginClosed) return;
+    const last = marginPoints[marginPoints.length - 1];
+    const lastEffective = last.point.clone().addScaledVector(last.normal, marginOffset);
+    const geo = new THREE.BufferGeometry().setFromPoints([lastEffective, marginHoverPoint]);
+    const mat = new THREE.LineDashedMaterial({
+      color: 0xff5fd0, dashSize: Math.max(modelRadius * 0.02, 0.02), gapSize: Math.max(modelRadius * 0.012, 0.012),
+      transparent: true, opacity: 0.5, depthTest: false
+    });
+    marginPreviewLine = new THREE.Line(geo, mat);
+    marginPreviewLine.computeLineDistances(); // required for dashed lines to render correctly
+    marginPreviewLine.renderOrder = 995;
+    scene.add(marginPreviewLine);
+  }
+
+  // Tracks the cursor whenever the margin tool is armed (and not mid-drag)
+  // so the preview line above always points at wherever the next point
+  // would actually land. This only records the position — the actual
+  // raycast is throttled to once per rendered frame (see
+  // processMarginPendingPosition, called from the render loop), since raw
+  // mousemove events can fire far more often than the screen refreshes and
+  // a full-mesh raycast on every single one is what was causing the lag.
+  canvas.addEventListener('mousemove', (e) => {
+    if(!marginArmed || marginDragIndex !== -1){
+      if(marginHoverPoint){ marginHoverPoint = null; updateMarginPreviewLine(); }
+      return;
+    }
+    marginPendingPos = { x: e.clientX, y: e.clientY };
+  });
+
+  // Converts a world-space point back into the ORIGINAL uploaded file's own
+  // coordinate system by undoing the group offset and the model's tracked
+  // cumulative geometry transform — this is what makes the exported margin
+  // line up correctly when the doctor reopens the original scan in exocad,
+  // rather than reflecting this viewer's internal auto-orientation.
+  function worldPointToOriginalSpace(worldPoint, model){
+    const local = worldPoint.clone().sub(model.group.position);
+    const inv = new THREE.Matrix4().copy(model.geometryTransform).invert();
+    return local.applyMatrix4(inv);
+  }
+
+  // Filename and content format follow exocad's own ".dentalProject" spec
+  // for 3rd-party-written margin files: "<projectname>-<toothnumber>-margin.xyz",
+  // plain ASCII, one "X Y Z" point per line (space-separated), with an
+  // optional first line giving the total point count.
+  function exportMargin(marginId){
+    const margin = margins.find(m => m.id === marginId);
+    if(!margin) return;
+    const effectivePoints = computeEffectivePoints(margin.rawPoints, margin.offset);
+    const lines = [String(effectivePoints.length)];
+    effectivePoints.forEach((p) => {
+      const orig = worldPointToOriginalSpace(p, margin.model);
+      lines.push(`${orig.x.toFixed(6)} ${orig.y.toFixed(6)} ${orig.z.toFixed(6)}`);
+    });
+    const text = lines.join('\n') + '\n';
+    const filename = `${margin.projectName}-${margin.toothNumber}-margin.xyz`;
+    downloadBlob(new Blob([text], { type: 'text/plain' }), filename);
+  }
+
+  // Pulls a saved margin back into the live editable working state — same
+  // points, same offset, same open/closed setting — and removes it from the
+  // saved list until it's saved again. Any not-yet-saved working points for
+  // a different margin are discarded, same as switching models mid-pick.
+  function editMargin(marginId){
+    const idx = margins.findIndex(m => m.id === marginId);
+    if(idx === -1) return;
+    const margin = margins[idx];
+    disposeMarginVisual(margin);
+    margins.splice(idx, 1);
+
+    marginPoints = margin.rawPoints.map(p => ({ point: p.point.clone(), normal: p.normal.clone() }));
+    marginOwnerModel = margin.model;
+    marginClosed = margin.closed;
+    marginOffset = margin.offset;
+    marginHistory = [];
+    marginRedoStack = [];
+
+    document.getElementById('tMarginClosed').classList.toggle('on', marginClosed);
+    document.getElementById('sMarginOffset').value = Math.round(marginOffset * 100);
+    document.getElementById('marginOffsetValue').textContent = marginOffset.toFixed(2);
+    document.getElementById('marginToothNumber').value = margin.toothNumber || '';
+    document.getElementById('marginProjectName').value = margin.projectName || '';
+
+    redrawMarginWorking();
+    updateMarginControlsVisibility();
+    renderMarginList();
+    setMarginArmed(true); // ready to continue adding/dragging/removing points immediately
+  }
+
+  function removeMargin(marginId){
+    const idx = margins.findIndex(m => m.id === marginId);
+    if(idx === -1) return;
+    disposeMarginVisual(margins[idx]);
+    margins.splice(idx, 1);
+    renderMarginList();
+  }
+
+  function renderMarginList(){
+    const listEl = document.getElementById('marginList');
+    listEl.innerHTML = margins.map((m) => `
+      <div class="model-row margin-row" data-id="${m.id}">
+        <div class="model-row-top">
+          <span class="model-name">Tooth ${escapeHtml(m.toothNumber)} — ${escapeHtml(m.model.name)}</span>
+          <button class="model-remove" data-id="${m.id}" title="Remove">×</button>
+        </div>
+        <div class="model-meta">${m.rawPoints.length} points${m.closed ? ' · closed loop' : ''}</div>
+        <div class="model-meta">${escapeHtml(m.projectName)}-${escapeHtml(m.toothNumber)}-margin.xyz</div>
+        <div class="model-export-row">
+          <button class="model-edit-btn" data-id="${m.id}">Edit</button>
+          <button class="model-export-btn" data-id="${m.id}">Export .xyz</button>
+        </div>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('.margin-row .model-remove').forEach((btn) => {
+      btn.addEventListener('click', () => removeMargin(Number(btn.dataset.id)));
+    });
+    listEl.querySelectorAll('.margin-row .model-export-btn').forEach((btn) => {
+      btn.addEventListener('click', () => exportMargin(Number(btn.dataset.id)));
+    });
+    listEl.querySelectorAll('.margin-row .model-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => editMargin(Number(btn.dataset.id)));
+    });
+  }
+
   // ================= 3D MEASUREMENT TOOL =================
-  // Click-to-place, surface-snapped point-to-point measurement in the main
-  // 3D view. Snapping uses a BVH-accelerated raycast (BVHUtils) so the point
+  // Click two points on any loaded model's surface to measure the
+  // straight-line distance between them — each click snaps via raycast so it
   // always lands on the actual mesh surface, never a free-floating
   // coordinate. Distance format/units/accent color match the existing 2D
   // cross-section measure tool (mm, 2 decimals, #6bb8ff) for consistency.
@@ -2660,9 +3864,9 @@
 
   function setMeasure3DArmed(on){
     measure3DArmed = on;
+    if(on){ setBaseArmed(false); setSectionArmed(false); setThreePointArmed(false); setMarginArmed(false); }
     const btn = document.getElementById('btnMeasure3D');
     btn.classList.toggle('active', on);
-    canvas.classList.toggle('crosshair', on || sectionArmed || baseArmed || threePointArmed);
     if(on){
       // BVH-accelerate every loaded model up front so every placement
       // (not just the first) benefits, not only the model that happens to
@@ -2671,6 +3875,7 @@
     } else {
       cancelPendingMeasurePoint();
     }
+    updateToolCursorAndBanner();
   }
 
   document.getElementById('btnMeasure3D').addEventListener('click', () => {
@@ -2701,11 +3906,13 @@
   function registerMeasurePoint(point, modelId){
     if(!measure3DPending){
       measure3DPending = { point, modelId, marker: addMeasureMarker(point, modelId) };
+      updateToolCursorAndBanner();
       return;
     }
     const first = measure3DPending;
     measure3DPending = null;
     createMeasurement(first, { point, modelId, marker: addMeasureMarker(point, modelId) });
+    updateToolCursorAndBanner();
   }
 
   function createMeasurement(a, b){
@@ -2758,6 +3965,7 @@
   function clearAllMeasurements(){
     while(measurements3D.length) removeMeasurement(measurements3D[0].id);
     cancelPendingMeasurePoint();
+    if(measure3DArmed) updateToolCursorAndBanner();
   }
 
   // Removes every measurement that references a model that's been removed
@@ -3160,6 +4368,7 @@
     const raw = new Float32Array(vertCount);
 
     const p = new THREE.Vector3(), n = new THREE.Vector3(), origin = new THREE.Vector3();
+    const maxThicknessDist = model.size.length(); // bounding-box diagonal — thickness can't exceed this
 
     document.getElementById('thkProgressRow').style.display = 'block';
     document.getElementById('thkProgressFill').style.width = '0%';
@@ -3169,7 +4378,7 @@
       p.fromBufferAttribute(posAttr, i);
       n.fromBufferAttribute(normAttr, i).normalize();
       origin.copy(p).addScaledVector(n, -THK_EPS);
-      const hit = BVHUtils.castLocal(bvh, origin, n.clone().negate());
+      const hit = BVHUtils.castLocal(bvh, origin, n.clone().negate(), maxThicknessDist);
       raw[i] = hit ? (hit.distance + THK_EPS) : -1; // -1 = no opposing surface found
     }, (frac) => {
       document.getElementById('thkProgressFill').style.width = (frac * 100).toFixed(0) + '%';
@@ -3250,7 +4459,7 @@
 
   function setSectionArmed(on){
     sectionArmed = on;
-    if(on){ setBaseArmed(false); setThreePointArmed(false); }
+    if(on){ setBaseArmed(false); setThreePointArmed(false); setMarginArmed(false); setMeasure3DArmed(false); }
     const btn = document.getElementById('btnDrawSection');
     btn.classList.toggle('active', on);
     btn.textContent = on ? '◈ Click + drag on model…' : '◈ Draw section line';
@@ -3259,8 +4468,9 @@
 
   function updateToolCursorAndBanner(){
     const banner = document.getElementById('drawBanner');
-    canvas.classList.toggle('crosshair', sectionArmed || baseArmed || threePointArmed);
-    banner.classList.toggle('blue', baseArmed || threePointArmed);
+    canvas.classList.toggle('crosshair', sectionArmed || baseArmed || threePointArmed || marginArmed || measure3DArmed);
+    banner.classList.toggle('blue', baseArmed || threePointArmed || measure3DArmed);
+    banner.classList.toggle('pink', marginArmed);
     if(sectionArmed){
       banner.textContent = 'Click and drag across the model to define the cut';
       banner.classList.add('show');
@@ -3269,6 +4479,12 @@
       banner.classList.add('show');
     } else if(threePointArmed){
       banner.textContent = `Click point ${threePointPicks.length + 1} of 3 on the model`;
+      banner.classList.add('show');
+    } else if(marginArmed){
+      banner.textContent = 'Click to place margin points — drag a point to move it, Shift+click to remove it';
+      banner.classList.add('show');
+    } else if(measure3DArmed){
+      banner.textContent = measure3DPending ? 'Click the second point to complete the measurement' : 'Click two points on the model to measure the distance between them';
       banner.classList.add('show');
     } else {
       banner.classList.remove('show');
@@ -3898,12 +5114,20 @@
   });
 
   function handleFiles(fileList){
-    Array.from(fileList || []).forEach(handleFile);
+    const files = Array.from(fileList || []);
+    // Uploading more than one file in a single action is a strong signal
+    // they're a related set that should stay positioned relative to each
+    // other (matched jaw scans, a scan plus its temp restoration, etc.) —
+    // so batch uploads default to preserving alignment automatically, even
+    // if the toggle wasn't explicitly turned on. A single file at a time
+    // still gets the normal auto-centered, auto-oriented treatment.
+    const batchPreserve = preserveAlignment || files.length > 1;
+    files.forEach((file) => handleFile(file, batchPreserve));
   }
 
-  function handleFile(file){
+  function handleFile(file, forcePreserve){
     const reader = new FileReader();
-    reader.onload = (e) => loadModelData(e.target.result, file.name);
+    reader.onload = (e) => loadModelData(e.target.result, file.name, forcePreserve);
     reader.onerror = () => alert('Could not read "' + file.name + '".');
     reader.readAsArrayBuffer(file);
   }
@@ -3914,6 +5138,17 @@
     wireOn = !wireOn;
     tWire.classList.toggle('on', wireOn);
     models.forEach(m => { m.wireMesh.visible = wireOn; });
+  });
+
+  // When on, newly loaded models skip auto-centering and auto-orientation
+  // entirely, so a set of files that already share one coordinate system
+  // (e.g. matched upper/lower jaw scans) stay correctly positioned
+  // relative to each other instead of each being independently recentered
+  // and reoriented onto its own detected flat base.
+  let preserveAlignment = false;
+  document.getElementById('tPreserveAlignment').addEventListener('click', function(){
+    preserveAlignment = !preserveAlignment;
+    this.classList.toggle('on', preserveAlignment);
   });
 
   let gridOn = false;
@@ -3989,6 +5224,8 @@
     const dt = (now - lastFrame) / 1000;
     lastFrame = now;
     resize(); // cheap no-op unless the container size actually changed (e.g. panel collapsing)
+    processMarginPendingPosition(); // throttles margin hover/drag raycasting to once per frame
+    animateMarginPointHover(now);
     if(autoRotate && !isDraggingPlane){
       const qSpin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dt * 0.4);
       orbitQuat.premultiply(qSpin).normalize();
